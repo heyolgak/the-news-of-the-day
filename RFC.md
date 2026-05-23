@@ -37,7 +37,7 @@ sequenceDiagram
   participant R as Vercel /api/refresh
   participant T as Tavily
   participant N as Nebius
-  participant KV as Vercel KV
+  participant KV as Upstash Redis
   participant V as Visitor
   participant L as Vercel /api/latest
 
@@ -70,7 +70,7 @@ sequenceDiagram
 | Crawl news sources | Tavily API (called from `/api/refresh`) |
 | Synthesize daily news | Nebius-hosted LLM (called from `/api/refresh`) |
 | Refresh + secret validation | Route `/api/refresh` |
-| Store latest news | Vercel KV (key `news:latest`) |
+| Store latest news | Upstash Redis via Vercel Marketplace (key `news:latest`) |
 | Serve news to the page | Route `/api/latest` |
 | Render the page | Frontend (reads `/api/latest`) |
 | Host the live site | Vercel |
@@ -79,7 +79,7 @@ sequenceDiagram
 
 ### Data contract
 
-The value at KV key `news:latest` is a single JSON object written by `/api/refresh` and read by `/api/latest` (which returns it to the frontend as-is). Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
+The value at the Redis key `news:latest` is a single JSON object written by `/api/refresh` and read by `/api/latest` (which returns it to the frontend as-is). Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
 
 ```ts
 type NewsEntry = {
@@ -141,14 +141,16 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ## Implementation plan
 
-_Draft — not started yet._
+Executed as 7 small coding PRs plus one no-code provisioning step, each merged to `main` independently so every PR gets a Vercel preview deploy. The full per-step detail (changes, smoke tests, verification) lives in the working plan file at `~/.claude/plans/read-all-docs-at-sequential-narwhal.md`; the summary below is the contract.
 
-1. **Repo & scaffold.** Create GitHub repo, run `create-next-app`, push `RFC.md` and `DESIGN.md`, ship a placeholder page.
-2. **Provision accounts & env vars.** Vercel, Vercel KV, Tavily, Nebius. Wire `.env.local` and Vercel envs.
-3. **Smoke-test each tool.** Four throwaway scripts (`scripts/*-ping.ts`) to confirm Tavily, Nebius, KV, and Vercel Cron each work in isolation.
-4. **`/api/refresh` happy path.** Tavily → Nebius → KV, returning `NewsEntry`. Manual trigger only (cron not yet enabled).
-5. **`/api/latest`.** Reads KV, returns `NewsEntry` as JSON.
-6. **Frontend.** Renders the page from `/api/latest` to match the design (WSJ-style typography, date header, image, headline, dek, sources list, footer).
-7. **Cron + secret.** Add `CRON_SECRET` validation to `/api/refresh`; enable Vercel Cron at `0 */3 * * *`.
-8. **Edge states.** Stale warning (>210 min), cold-start placeholder, "fewer than 3 sources" abort path.
-9. **Polish.** Favicon, page `<title>`, meta description, OG image. Custom domain deferred.
+1. **Scaffold + repo hygiene.** `create-next-app` (TS, Tailwind v4, App Router), strict tsconfig, placeholder page, stub `/api/latest` and `/api/refresh` returning 501, `.env.example`. No `LICENSE` (repo is private).
+2. **Cleanup.** Drop unreferenced `create-next-app` demo assets (favicon, demo SVGs, AGENTS.md) and dormant Prettier configs.
+3. **Pre-PR setup (no code).** Vercel project, Upstash Redis via Vercel Marketplace (free tier), Tavily account, Nebius account, `CRON_SECRET` generated locally. All five env vars wired in Vercel for Production + Preview.
+4. **Shared types, Redis adapter, `/api/latest`.** `lib/types.ts` (NewsEntry per data contract), `lib/kv.ts` (read/write `news:latest` via `@upstash/redis`), `/api/latest` returns the entry or `{ entry: null }` for cold start.
+5. **Tavily crawl module.** `lib/tavily.ts` with `crawlSources()` hitting the 8 outlets in parallel and normalizing to `TavilyArticle[]`. Not wired into refresh yet.
+6. **`/api/refresh` happy path.** Tavily → Nebius synthesis in JSON mode → Redis write. Manual POST trigger only, validated against `CRON_SECRET`. Aborts (503, no overwrite) on <3 articles or invalid LLM output.
+7. **Frontend.** Render the page per `DESIGN.md` from `/api/latest`. Date header, image, headline, dek, sources list, footer. Cold-start placeholder when KV is empty.
+8. **Cron + secret hardening.** `vercel.json` schedules `0 */3 * * *` against `/api/refresh`. `Authorization: Bearer <CRON_SECRET>` validated server-side.
+9. **Edge states + polish.** Stale warning (>210 min), favicon, page title, meta description, OG image, robots.txt. Resolve duplicate-headline policy here.
+
+Decisions deferred until the step that needs them: specific Nebius model (Step 6), cold-start copy (Step 7), duplicate-headline policy (Step 9). Defaults documented in the plan file.
