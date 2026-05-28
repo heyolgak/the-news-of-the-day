@@ -362,6 +362,58 @@ Dashboard and password-manager work only — no commits, no branch.
 
 ---
 
+## Design decisions
+
+Decisions made during execution that the original RFC didn't lock down. Recorded here so future readers (and future-me) can see *why* the code looks the way it does.
+
+### Tavily access via direct `fetch`, not `@tavily/sdk` *(Step 4)*
+
+Tavily's `/search` is a single POST returning clean JSON. An SDK would have added a few hundred npm packages for ergonomic gain we don't need. `lib/tavily.ts` uses Node's global `fetch` directly.
+
+### Per-result images, not response-level *(Step 4)*
+
+Tavily's `/search` response includes `images` at two levels: an aggregated response-level array and a per-result `images` array on each article. We use the per-result one so `TavilyArticle.imageUrl` belongs to *that specific article* — important when the LLM picks one to display alongside the headline it chose.
+
+### Debug route under `/api/debug/`, not `/api/_debug/` *(Step 4)*
+
+The RFC originally proposed `/api/_debug/tavily`. Folders prefixed with `_` are **private** in Next.js App Router and aren't routed — the path 404s. We used `/api/debug/tavily` instead (still secret-guarded, still temporary, deleted in Step 5a).
+
+### Step 5 split into 5a (stub) + 5b (real synthesis) *(Step 5a)*
+
+The original Step 5 wired Tavily + Nebius + KV in one PR. We split it:
+- **5a** proves the non-LLM half end-to-end (auth, route, KV write, type contract) with a stub `synthesizeNews()` that fakes a `NewsEntry` from the first crawled article.
+- **5b** replaces the stub with the real Nebius call.
+
+Smaller diffs, easier to bisect when something breaks, and the Step 6 frontend can be built against a real (if dumb) KV entry instead of a hand-seeded one.
+
+### Server-overridden `date.date` and `news.generatedAt` *(Step 5a/5b)*
+
+The LLM has no reliable clock or calendar. The server passes today's ISO date in as a string and unconditionally overwrites both fields after parsing the LLM response. Avoids a class of "the entry says 2026-05-27 but was generated 2026-05-28" bugs.
+
+### Crawler shape — per-outlet `/search`, not homepage `/extract` *(Step 5b)*
+
+When tightening crawler input for the LLM, we considered two ways to collect material:
+
+| | Tavily `/search` per outlet | Tavily `/extract` on each outlet's homepage |
+|---|---|---|
+| **What we get** | ~10 ranked recent (≤24h) news articles per outlet × 8 outlets ≈ 80 article entries with title + short snippet | 8 full homepage text extractions, including nav, sidebar, evergreen links |
+| **Token cost to LLM** | ~80 × ~550 chars ≈ 44 KB ≈ **~11K tokens** | 8 × ~40 KB plain-text page ≈ 320 KB ≈ **~80K tokens** |
+| **Recency** | Tavily filters last 24h server-side | Whatever's on the homepage now (often includes archived/evergreen content) |
+| **Ranking** | Tavily ranks by relevance to "top news today" | Whatever order the page renders, mixed with ads + nav |
+| **Robustness** | One API surface; Tavily handles per-outlet quirks | Each outlet has different HTML; per-outlet parsers brittle to redesigns |
+
+We picked `/search` per outlet with `max_results: 10`. "More content" via homepage extraction would have been mostly noise — and noise hurts synthesis quality because the LLM can't tell which entries are today's actual stories vs. evergreen sidebar content.
+
+### Snippet, not raw_content *(Step 5b)*
+
+Related decision: we **drop `include_raw_content`** from the Tavily request and feed the LLM Tavily's `content` field (a short snippet, ~200 chars of actual lede text) instead of full article bodies. Full bodies are dominated by page chrome ("[Skip to content]", "[Watch Live]", nav, footers) that the LLM has to wade through before reaching real content. Titles + snippets are a tighter signal at lower token cost.
+
+### Strict URL validation against the crawled set *(Step 5b)*
+
+After parsing the LLM response, every `source.url` (and `news.imageUrl` if present) is checked against the URLs returned by `crawlSources()`. Any URL not in that set throws → 503 → KV unchanged. LLMs occasionally invent plausible URLs; we'd rather skip a refresh than ship broken links.
+
+---
+
 ## End-to-end verification (after Step 8)
 
 The project is "done" when:
