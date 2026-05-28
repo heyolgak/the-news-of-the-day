@@ -141,16 +141,233 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ## Implementation plan
 
-Executed as 7 small coding PRs plus one no-code provisioning step, each merged to `main` independently so every PR gets a Vercel preview deploy. The full per-step detail (changes, smoke tests, verification) lives in the working plan file at `~/.claude/plans/read-all-docs-at-sequential-narwhal.md`; the summary below is the contract.
+Executed as 7 small coding PRs plus one no-code provisioning step, each merged to `main` independently so every PR gets its own Vercel preview deploy. Each PR is reviewable in under 15 minutes.
 
-1. **Scaffold + repo hygiene.** `create-next-app` (TS, Tailwind v4, App Router), strict tsconfig, placeholder page, stub `/api/latest` and `/api/refresh` returning 501, `.env.example`. No `LICENSE` (repo is private).
-2. **Cleanup.** Drop unreferenced `create-next-app` demo assets (favicon, demo SVGs, AGENTS.md) and dormant Prettier configs.
-3. **Pre-PR setup (no code).** Vercel project, Upstash Redis via Vercel Marketplace (free tier), Tavily account, Nebius account, `CRON_SECRET` generated locally. All five env vars wired in Vercel for Production + Preview.
-4. **Shared types, Redis adapter, `/api/latest`.** `lib/types.ts` (NewsEntry per data contract), `lib/kv.ts` (read/write `news:latest` via `@upstash/redis`), `/api/latest` returns the entry or `{ entry: null }` for cold start.
-5. **Tavily crawl module.** `lib/tavily.ts` with `crawlSources()` hitting the 8 outlets in parallel and normalizing to `TavilyArticle[]`. Not wired into refresh yet.
-6. **`/api/refresh` happy path.** Tavily → Nebius synthesis in JSON mode → Redis write. Manual POST trigger only, validated against `CRON_SECRET`. Aborts (503, no overwrite) on <3 articles or invalid LLM output.
-7. **Frontend.** Render the page per `DESIGN.md` from `/api/latest`. Date header, image, headline, dek, sources list, footer. Cold-start placeholder when KV is empty.
-8. **Cron + secret hardening.** `vercel.json` schedules `0 */3 * * *` against `/api/refresh`. `Authorization: Bearer <CRON_SECRET>` validated server-side.
-9. **Edge states + polish.** Stale warning (>210 min), favicon, page title, meta description, OG image, robots.txt. Resolve duplicate-headline policy here.
+Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, Vercel Cron) is done **locally before the step that uses it**, with throwaway scripts that are never committed.
 
-Decisions deferred until the step that needs them: specific Nebius model (Step 6), cold-start copy (Step 7), duplicate-headline policy (Step 9). Defaults documented in the plan file.
+Decisions deferred until the step that needs them:
+- Specific Nebius model — Step 5.
+- Cold-start UI copy — Step 6.
+- Duplicate-headline policy — Step 8 (default: overwrite-always).
+
+---
+
+### Step 1 — Next.js scaffold + repo hygiene
+
+**Goal:** A deployable empty Next.js app, linked to a Vercel project, with stubbed API routes and a preview that builds green. External services are not provisioned yet — they land in Step 2.
+
+**Changes:**
+- `npx create-next-app@latest .` (TypeScript, Tailwind v4, App Router, ESLint).
+- `tsconfig.json`: `strict: true`, add `noUncheckedIndexedAccess: true`.
+- Replace the default `app/page.tsx` with a minimal placeholder: black text on white, "The News of the Day — coming soon" in Plantin (Georgia fallback).
+- Stub routes returning `501 { error: 'not implemented' }`:
+  - `app/api/refresh/route.ts`
+  - `app/api/latest/route.ts`
+- `README.md`: one paragraph + links to RFC, DESIGN, CLAUDE.
+- Link the Vercel project to the GitHub repo (Hobby plan, deploy-on-push to `main`).
+
+**Verification:**
+- `npm run dev` → `localhost:3000` renders the placeholder.
+- `curl localhost:3000/api/latest` returns 501.
+- `npm run build` succeeds with no type errors.
+- Vercel preview URL renders the placeholder.
+
+---
+
+### Step 1 cleanup — remove scaffold cruft
+
+**Goal:** Drop files left over from `create-next-app` and the initial scaffold that aren't referenced anywhere or wired into the build, so the repo only carries what's actually used.
+
+**Changes:**
+- Delete `AGENTS.md` — project uses `CLAUDE.md` for agent context.
+- Delete unreferenced `create-next-app` demo SVGs in `public/` (`file.svg`, `globe.svg`, `next.svg`, `vercel.svg`, `window.svg`).
+- Delete `app/favicon.ico` (Next default) — real favicon lands in Step 8.
+- Delete `.prettierrc` and `.prettierignore` — Prettier isn't installed or referenced by any npm script, so they were dormant.
+
+**Verification:**
+- `npm run build` still clean.
+- Placeholder home and 501 stubs still serve as expected.
+
+---
+
+### Step 2 — Pre-PR setup (provision external services, no code)
+
+Dashboard and password-manager work only — no commits, no branch.
+
+**Steps:**
+1. **Upstash Redis** via Vercel Marketplace → Storage → Connect Database (free tier). Auto-wires `KV_REST_API_URL`, `KV_REST_API_TOKEN` (plus a few extras we ignore) to Production + Preview env vars.
+2. **Tavily** account + API key.
+3. **Nebius** account + API key. Model choice deferred to Step 5.
+4. `CRON_SECRET` = `openssl rand -hex 32`.
+5. Add three remaining vars on the Vercel project, Production + Preview, Sensitive ON: `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `CRON_SECRET`.
+6. Local `.env.local` with all five values (gitignored). `.gitignore` updated to ignore `.env.local` explicitly.
+7. Save all five values in a password manager.
+
+**Verification:**
+- Vercel env vars page lists all five with Production + Preview scope.
+- Locally: `node --env-file=.env.local -e "['TAVILY_API_KEY','NEBIUS_API_KEY','KV_REST_API_URL','KV_REST_API_TOKEN','CRON_SECRET'].forEach(k => console.log(k, process.env[k] ? 'set' : 'MISSING'))"` confirms all five.
+
+---
+
+### Step 3 — Shared types, Redis adapter, `/api/latest`
+
+**Smoke test first (local, throwaway, not committed):** tiny `scripts/kv-ping.ts` using `@upstash/redis` to `set` then `get` against `news:test`. Confirm the round-trip. Delete before opening the PR.
+
+**Goal:** A working `/api/latest` route that reads `news:latest` from Upstash Redis and returns it as JSON.
+
+**Changes:**
+- `npm install @upstash/redis`.
+- `lib/types.ts` — exports `NewsEntry`, `NewsDate`, `NewsBody`, `NewsSource` per the data contract above. `NewsBody.imageUrl` optional.
+- `lib/env.ts` — typed accessor `requireEnv(name)` that throws on missing env at module init.
+- `lib/kv.ts` — `getLatestNews(): Promise<NewsEntry | null>` and `setLatestNews(entry)`. Uses `KV_REST_API_URL` + `KV_REST_API_TOKEN`. Key constant `NEWS_LATEST_KEY = 'news:latest'`.
+- `app/api/latest/route.ts` — `GET` handler:
+  - 200 + `NewsEntry` JSON if Redis has a value.
+  - 200 + `{ entry: null }` if empty (cold start).
+  - 500 on Redis errors (logged with stack).
+  - `export const dynamic = 'force-dynamic'`.
+
+**Verification:**
+- Empty Redis: `curl <preview>/api/latest` → `{ "entry": null }`.
+- After seeding a hand-crafted `NewsEntry` to `news:latest`: `curl <preview>/api/latest` returns that entry exactly.
+- `npm run build` clean.
+
+---
+
+### Step 4 — Tavily crawl module (lib only, no wiring yet)
+
+**Smoke test first:** `scripts/tavily-ping.ts` — one `/search` call against `bbc.com/news`, log article count + first title. Confirm key + plan work. Delete after.
+
+**Goal:** A reusable `crawlSources()` that returns normalized articles. Not wired into `/api/refresh` yet — that's Step 5.
+
+**Changes:**
+- `npm install @tavily/sdk` (or `fetch` directly, pick after smoke-test).
+- `lib/tavily.ts`:
+  - Constant `SOURCES` — the 8 outlets from [News sources list](#news-sources-list).
+  - `type TavilyArticle = { outlet, title, url, publishedAt?, body, imageUrl? }`.
+  - `crawlSources(): Promise<TavilyArticle[]>` — fires one query per outlet in parallel, normalizes results, filters out entries with empty `body`. No retries in v1.
+  - Throws if every source errors.
+- Temporary debug route `app/api/_debug/tavily/route.ts` calling `crawlSources()` and returning `{ count, sample }`. Guarded by `CRON_SECRET` header. Deleted in Step 5.
+
+**Verification:**
+- `curl -H "x-cron-secret: $CRON_SECRET" <preview>/api/_debug/tavily` returns `count >= 3` and a sane sample.
+- `npm run build` clean.
+
+---
+
+### Step 5 — `/api/refresh` happy path (Tavily + Nebius + Redis)
+
+**Decide before opening this PR:** which Nebius model. Smoke-test 1–2 candidates with `scripts/nebius-ping.ts` (uncommitted) against a small fixture set; check JSON-mode quality + latency. Record the choice in `CLAUDE.md`.
+
+**Goal:** `POST /api/refresh` (still secret-guarded but manually triggered — cron lands in Step 7) crawls, synthesizes, writes Redis, returns the new `NewsEntry`.
+
+**Changes:**
+- `npm install openai` (Nebius is OpenAI-API-compatible).
+- `lib/nebius.ts`:
+  - `synthesizeNews(articles, todayIso): Promise<NewsEntry>`.
+  - System prompt per [LLM prompt sketch](#llm-prompt-sketch). Encodes wire-service tone, ≤12-word headline, ≤30-word dek, paraphrase-not-quote rule, 3–6 sources, JSON output matching `NewsEntry`.
+  - Request `response_format: { type: 'json_object' }`.
+  - Validate response shape. Throw on invalid JSON, missing required fields, or `sources.length < 3`.
+- `app/api/refresh/route.ts` — replace the 501 stub:
+  - `POST` handler. Reject if `x-cron-secret` header ≠ `CRON_SECRET` → 401.
+  - Pipeline with logged stages: start → crawl (log count) → synthesize (log model + duration) → Redis write → return `NewsEntry`. Total duration at end.
+  - On any of [<3 articles, LLM error, invalid JSON, <3 sources]: log, **do not overwrite Redis**, return 503.
+- Delete the debug route from Step 4.
+- `export const runtime = 'nodejs'`, `export const maxDuration = 60`.
+
+**Verification:**
+- `curl -X POST -H "x-cron-secret: $CRON_SECRET" <preview>/api/refresh` returns a `NewsEntry` within ~30s.
+- Immediately after: `curl <preview>/api/latest` returns the same entry.
+- Vercel function logs show staged log lines.
+- Missing header → 401.
+
+---
+
+### Step 6 — Frontend rendering
+
+**Decide before opening this PR:** cold-start copy when `/api/latest` returns `{ entry: null }`. Default: centered "First refresh pending — check back shortly" in Plantin, no image, no sources block.
+
+**Goal:** The single page matches `DESIGN.md` and reads from `/api/latest`.
+
+**Changes:**
+- Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
+- Fonts: Plantin (Georgia fallback) and Helvetica Neue (Arial fallback) via `next/font` or `<link>`.
+- `app/page.tsx` (server component): fetch `/api/latest` at request time (`cache: 'no-store'`), render via a presentational component:
+  - **Date header** — Helvetica Neue 13px, uppercase + tracked, formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ.
+  - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding). Skip if absent.
+  - **Headline** — Plantin 700, 40px display, tracking −0.8px.
+  - **Dek** — Plantin 400, 20px, line-height 1.30.
+  - **Sources list** — Helvetica Neue 14px, one per row: `outlet · title` linked to `url`, `target=_blank rel=noopener`. Sterling Gray outlet, black title.
+  - **Footer** — Helvetica Neue 13px caption.
+- Cold-start path: render placeholder copy; no sources, no image.
+- Max width 1296px, centered; spacing per `DESIGN.md` scale. Single-column always.
+
+**Verification:**
+- With Redis populated: page matches `DESIGN.md` typography, palette, and spacing.
+- Clear Redis: page shows cold-start copy.
+- Lighthouse mobile + desktop pass on Performance + Accessibility.
+- Visual sanity check against the reference screenshot in `the-news-of-the-day-screens/`.
+
+---
+
+### Step 7 — Cron schedule + secret hardening
+
+**Smoke test first:** before opening this PR, deploy a one-off no-op cron via a temporary `vercel.json` hitting a logging-only endpoint on a tight schedule (e.g. `*/10 * * * *` for an hour). Confirm Vercel Cron actually fires in your account/region. Roll it back before opening the PR.
+
+**Goal:** Vercel Cron triggers `/api/refresh` every 3 hours; secret validation uses the same code path as Step 5.
+
+**Changes:**
+- `vercel.json`:
+  ```json
+  {
+    "crons": [
+      { "path": "/api/refresh", "schedule": "0 */3 * * *" }
+    ]
+  }
+  ```
+- Adjust `app/api/refresh/route.ts`:
+  - Accept either `GET` (cron) or `POST` (manual).
+  - Validate via `Authorization: Bearer ...` header against `CRON_SECRET`. Optionally keep `x-cron-secret` for manual-curl ergonomics.
+- Document the manual trigger in `README.md`.
+
+**Verification:**
+- After merge, wait for the next `0 */3` slot or trigger manually from the Vercel dashboard. Function logs show the run; Redis updates; page reflects new content.
+- Unauthorized GET → 401.
+
+---
+
+### Step 8 — Edge states + polish
+
+**Decide before opening this PR:** duplicate-headline handling. Default: overwrite-always.
+
+**Goal:** All RFC edge states are visible; basic SEO/social meta is set.
+
+**Changes — edge states:**
+- **Stale warning.** In page render, compute `Date.now() - new Date(entry.news.generatedAt).getTime() > 210 * 60 * 1000`. If true, render a red Helvetica Neue caption under the dek: "Last updated {N} minutes ago". Computed client-side so it stays fresh on re-render.
+- **Cold-start UI** — confirm Step 6 default is final (or replace per decision).
+- **Refresh failure path** — already returns 503 from Step 5; verify the page still serves the previous good entry after a failed refresh (no frontend change needed if Step 5 is correct).
+- **Duplicate-headline policy** applied per decision above.
+
+**Changes — polish:**
+- `app/favicon.ico` — black square or simple monogram.
+- `app/layout.tsx` metadata: `title: 'The News of the Day'`, `description: 'One LLM-synthesized story, refreshed every 3 hours.'`.
+- `public/og.png` — 1200×630, title in Plantin on white.
+- `public/robots.txt` permitting indexing.
+- Final pass on `CLAUDE.md` "Still open" section — convert resolved items to decisions.
+
+**Verification:**
+- Back-date `generatedAt` to 4 hours ago in Redis → stale warning appears in red.
+- Lighthouse SEO ≥ 95.
+- Share the URL in a chat that unfurls OG → image renders.
+- `/favicon.ico` and `/robots.txt` both 200.
+
+---
+
+## End-to-end verification (after Step 8)
+
+The project is "done" when:
+- The Vercel production URL renders a real (cron-generated) news entry, not a fixture.
+- Vercel dashboard shows ≥3 successive cron runs at `0 */3` UTC with 200 responses.
+- Triggering `/api/refresh` manually with the bearer header overwrites Redis, and the page reflects the new entry within one reload.
+- A simulated failure (e.g. temporarily revoking the Tavily key and hitting refresh) returns 503 and the page still serves the previous good entry.
+- Stale warning appears when `generatedAt` is back-dated past 210 min.
+- The RFC's success criteria (live URL, ≥3 sources per visit, stale warning works, 7 consecutive cron days) are all met.
