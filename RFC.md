@@ -412,6 +412,18 @@ Related decision: we **drop `include_raw_content`** from the Tavily request and 
 
 After parsing the LLM response, every `source.url` (and `news.imageUrl` if present) is checked against the URLs returned by `crawlSources()`. Any URL not in that set throws → 503 → KV unchanged. LLMs occasionally invent plausible URLs; we'd rather skip a refresh than ship broken links.
 
+### Model configurability via `NEBIUS_MODEL` env var *(Step 5b)*
+
+The Nebius model ID is read from an env var `NEBIUS_MODEL` with a code default of `Qwen/Qwen3.5-397B-A17B-fast`. This lets us swap models without redeploying code, and means there's no smoke-test step in the PR — pick a default, ship, change later if needed.
+
+**To change the model:**
+
+- **Local development** — add `NEBIUS_MODEL=<model-id>` to `.env.local`, restart the dev server.
+- **Production / Preview on Vercel** — Project → Settings → Environment Variables → Add New. Key `NEBIUS_MODEL`, value `<model-id>`, tick Production + Preview. New deployments pick it up automatically; redeploy the current production deployment to apply it immediately.
+- **Code default** — change `DEFAULT_MODEL` in `lib/nebius.ts`. Applies wherever the env var isn't set.
+
+Available model IDs: <https://tokenfactory.nebius.com/models>.
+
 ---
 
 ## End-to-end verification (after Step 8)

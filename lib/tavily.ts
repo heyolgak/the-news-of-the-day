@@ -5,7 +5,7 @@ export type TavilyArticle = {
   title: string;
   url: string;
   publishedAt?: string;
-  body: string;
+  snippet: string;
   imageUrl?: string;
 };
 
@@ -24,7 +24,6 @@ type TavilyResult = {
   url: string;
   title: string;
   content?: string;
-  raw_content?: string;
   published_date?: string;
   images?: string[];
 };
@@ -46,9 +45,8 @@ async function queryOutlet(
       query: 'top news today',
       topic: 'news',
       include_domains: [domain],
-      include_raw_content: true,
       include_images: true,
-      max_results: 5,
+      max_results: 10,
       days: 1,
       search_depth: 'basic',
     }),
@@ -66,11 +64,11 @@ async function queryOutlet(
       outlet,
       title: r.title,
       url: r.url,
-      body: r.raw_content ?? r.content ?? '',
+      snippet: r.content ?? '',
       publishedAt: r.published_date,
       imageUrl: r.images?.[0],
     }))
-    .filter((a) => a.body.trim() !== '');
+    .filter((a) => a.snippet.trim() !== '');
 }
 
 export async function crawlSources(): Promise<TavilyArticle[]> {

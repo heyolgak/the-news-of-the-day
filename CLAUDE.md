@@ -38,6 +38,10 @@ Type naming convention: all data types use the `News*` prefix.
 - **Image selection.** The LLM picks `imageUrl` inline from the Tavily-returned article images. No separate image-selection step.
 - **LLM rules** (encoded in the prompt): wire-service editor tone, ≤12-word headline, ≤30-word dek, paraphrase don't quote (no verbatim passages >~15 words), 3–6 sources, JSON output matching `NewsEntry`. Abort the refresh if Tavily returns <3 articles or the LLM returns invalid JSON — keep the previous `news:latest`.
 
+## Configuration
+
+- **`NEBIUS_MODEL`** (optional env var) — Nebius model ID used for synthesis. Default in code: `Qwen/Qwen3.5-397B-A17B-fast`. Override in `.env.local` (local) or Vercel → Settings → Environment Variables (Production + Preview) without code changes. Available IDs: <https://tokenfactory.nebius.com/models>.
+
 ## Out of scope (v1)
 
 No user accounts, no archive page, no comments, no multi-story feed, no mobile app, no real-time push, no human-in-the-loop editorial step.
@@ -50,7 +54,7 @@ No user accounts, no archive page, no comments, no multi-story feed, no mobile a
 
 ## Still open
 
-See `RFC.md` → Open questions. Notably: specific Nebius model (decide after smoke-test), Tavily quota fit, cold-start state, duplicate-story handling.
+See `RFC.md` → Open questions. Notably: Tavily quota fit, cold-start state, duplicate-story handling. (Nebius model is now configurable via `NEBIUS_MODEL` env var — see Configuration above.)
 
 ## Working style
 
