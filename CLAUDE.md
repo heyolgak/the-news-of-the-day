@@ -54,7 +54,7 @@ No user accounts, no archive page, no comments, no multi-story feed, no mobile a
 
 ## Still open
 
-See `RFC.md` → Open questions. Notably: Tavily quota fit, cold-start state, duplicate-story handling. (Nebius model is now configurable via `NEBIUS_MODEL` env var — see Configuration above.)
+See `RFC.md` → Open questions. The only genuinely open item is **Tavily quota fit** (operational check before going live).
 
 ## Working style
 
