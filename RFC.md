@@ -130,7 +130,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 ### Observability
 
 - **Logs.** `/api/refresh` logs are visible in the Vercel dashboard (Project → Logs). Every run logs: start, Tavily query count + status, Nebius model + status, KV write status, total duration. Errors log with stack.
-- **Stale warning on the page.** `/api/latest` includes `generatedAt`. If it's older than 210 minutes (3h cycle + 30 min slack), the frontend shows a subtle "last updated X minutes ago" warning under the dek, in red.
+- **Stale warning on the page.** `/api/latest` includes `generatedAt`. The frontend shows it as "Generated at …" in the meta line under the dek; if it's older than 210 minutes (3h cycle + 30 min slack), that line also shows a "last updated X minutes ago" notice (styled per `DESIGN.md`).
 
 ## Open questions
 
@@ -141,14 +141,14 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ## Implementation plan
 
-Executed as 7 small coding PRs plus one no-code provisioning step, each merged to `main` independently so every PR gets its own Vercel preview deploy. Each PR is reviewable in under 15 minutes.
+Executed as 7 small coding PRs, one no-code provisioning step (Step 2), and one design/docs step (Step 6), each merged to `main` independently so every PR gets its own Vercel preview deploy. Each PR is reviewable in under 15 minutes.
 
 Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, Vercel Cron) is done **locally before the step that uses it**, with throwaway scripts that are never committed.
 
 Decisions deferred until the step that needs them:
 - Specific Nebius model — Step 5.
-- Cold-start UI copy — Step 6.
-- Duplicate-headline policy — Step 8 (default: overwrite-always).
+- Cold-start UI copy — Step 6 (Design).
+- Duplicate-headline policy — Step 9 (default: overwrite-always).
 
 ---
 
@@ -258,7 +258,7 @@ Dashboard and password-manager work only — no commits, no branch.
 
 **Decide before opening this PR:** which Nebius model. Smoke-test 1–2 candidates with `scripts/nebius-ping.ts` (uncommitted) against a small fixture set; check JSON-mode quality + latency. Record the choice in `CLAUDE.md`.
 
-**Goal:** `POST /api/refresh` (still secret-guarded but manually triggered — cron lands in Step 7) crawls, synthesizes, writes Redis, returns the new `NewsEntry`.
+**Goal:** `POST /api/refresh` (still secret-guarded but manually triggered — cron lands in Step 8) crawls, synthesizes, writes Redis, returns the new `NewsEntry`.
 
 **Changes:**
 - `npm install openai` (Nebius is OpenAI-API-compatible).
@@ -282,34 +282,60 @@ Dashboard and password-manager work only — no commits, no branch.
 
 ---
 
-### Step 6 — Frontend rendering
+### Step 6 — Design
 
-**Decide before opening this PR:** cold-start copy when `/api/latest` returns `{ entry: null }`. Default: centered "First refresh pending — check back shortly" in Plantin, no image, no sources block.
+**Goal:** Lock the page structure and the DESIGN-rule mapping in `DESIGN.md` *before* building, so the frontend step is mechanical. Docs only — no code, no data-contract change.
 
-**Goal:** The single page matches `DESIGN.md` and reads from `/api/latest`.
+We don't have a finished comp — only the style rules in `DESIGN.md` and a structure reference. The screenshot is the source of truth for what's visible.
 
-**Changes:**
-- Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
-- Fonts: Plantin (Georgia fallback) and Helvetica Neue (Arial fallback) via `next/font` or `<link>`.
-- `app/page.tsx` (server component): fetch `/api/latest` at request time (`cache: 'no-store'`), render via a presentational component:
-  - **Date header** — Helvetica Neue 13px, uppercase + tracked, formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ.
-  - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding). Skip if absent.
-  - **Headline** — Plantin 700, 40px display, tracking −0.8px.
-  - **Dek** — Plantin 400, 20px, line-height 1.30.
-  - **Sources list** — Helvetica Neue 14px, one per row: `outlet · title` linked to `url`, `target=_blank rel=noopener`. Sterling Gray outlet, black title.
-  - **Footer** — Helvetica Neue 13px caption.
-- Cold-start path: render placeholder copy; no sources, no image.
-- Max width 1296px, centered; spacing per `DESIGN.md` scale. Single-column always.
+**Decided** (recorded in `DESIGN.md` → Page Structure (v1) + Typography, which are the source of truth):
+- Single-story layout, top → bottom: masthead wordmark → date block → lead image card → headline → dek → meta line → `SOURCES` → source list → footer.
+- **Georgia** as the serif. **Helvetica Neue** (Arial fallback) as the sans.
+- **Dek** set in Helvetica Neue (sans), not the serif.
+- The reference's byline slot under the dek is **reused** as a **meta line** showing **"Generated at {generatedAt}"**, which also carries the stale notice when the entry is old.
+- **Image credit** kept as a **TBD** placeholder (no field in the contract — rendered around, not faked).
+- **Sources** rendered as **"By {outlet}"** with the outlet linked (the contract has no author names).
+- **Stale notice** styled per `DESIGN.md` (Editorial Yellow accent).
+- **Cold-start copy** confirmed: centered "First refresh pending — check back shortly" in Georgia, no image, no sources.
+- `DESIGN.md` trimmed to only the tokens/components this single-page app uses.
 
 **Verification:**
-- With Redis populated: page matches `DESIGN.md` typography, palette, and spacing.
-- Clear Redis: page shows cold-start copy.
-- Lighthouse mobile + desktop pass on Performance + Accessibility.
-- Visual sanity check against the reference screenshot in `the-news-of-the-day-screens/`.
+- `DESIGN.md` reads coherently; Page Structure (v1), the element→`NewsEntry` mapping, and the typography map are present and match the screenshot.
+- No dangling references to pruned tokens/components.
 
 ---
 
-### Step 7 — Cron schedule + secret hardening
+### Step 7 — Frontend rendering
+
+Cold-start copy was decided in Step 6: centered "First refresh pending — check back shortly" in Georgia, no image, no sources block.
+
+**Goal:** The single page matches `DESIGN.md` → Page Structure (v1) and reads from `/api/latest` (the browser never touches KV directly).
+
+**Changes:**
+- Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
+- Fonts: Georgia (serif) and Helvetica Neue (Arial fallback) via CSS font stacks — both are system/fallback faces, so no `next/font` or webfont loading is needed.
+- `app/page.tsx` (server component): read the latest entry at request time (`dynamic = 'force-dynamic'`) and render the structure from `DESIGN.md`:
+  - **Masthead** — centered "The News of the Day" wordmark (Georgia); hairline rule below.
+  - **Date block** — hairline, centered date `<h1>` (Georgia) formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ, hairline.
+  - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding); bottom-right credit overlay is TBD. Not a link. Skip the block if absent.
+  - **Headline** — Georgia 700, 40px display, tracking −0.8px.
+  - **Dek** — Helvetica Neue, ~18–20px.
+  - **Meta line** — Helvetica Neue caption: "Generated at {generatedAt}"; when `generatedAt` is older than 210 min, also render the stale notice "last updated X minutes ago" (computed client-side, styled per `DESIGN.md`).
+  - **Sources list** — hairline-separated rows: source title (Georgia) linked to `url`, then "By {outlet}" with the outlet linked, `target=_blank rel=noopener`.
+  - **Footer** — Helvetica Neue caption: "© {year} The News of the Day".
+- Cold-start path: render the centered Georgia message only; no image, no sources.
+- Max width 1296px; narrow reading column (~640px) centered. Single-column always.
+
+**Verification:**
+- With Redis populated: page matches `DESIGN.md` → Page Structure (v1) — masthead, date block, meta line, "By {outlet}" sources, Georgia headlines.
+- Clear Redis: page shows cold-start copy.
+- Back-date `generatedAt` past 210 min: stale notice appears in the meta line.
+- Lighthouse mobile + desktop pass on Performance + Accessibility.
+- Visual sanity check against the curated WSJ reference + screenshot.
+
+---
+
+### Step 8 — Cron schedule + secret hardening
 
 **Smoke test first:** before opening this PR, deploy a one-off no-op cron via a temporary `vercel.json` hitting a logging-only endpoint on a tight schedule (e.g. `*/10 * * * *` for an hour). Confirm Vercel Cron actually fires in your account/region. Roll it back before opening the PR.
 
@@ -335,27 +361,27 @@ Dashboard and password-manager work only — no commits, no branch.
 
 ---
 
-### Step 8 — Edge states + polish
+### Step 9 — Edge states + polish
 
 **Decide before opening this PR:** duplicate-headline handling. Default: overwrite-always.
 
-**Goal:** All RFC edge states are visible; basic SEO/social meta is set.
+**Goal:** All RFC edge states are verified; basic SEO/social meta is set.
 
 **Changes — edge states:**
-- **Stale warning.** In page render, compute `Date.now() - new Date(entry.news.generatedAt).getTime() > 210 * 60 * 1000`. If true, render a red Helvetica Neue caption under the dek: "Last updated {N} minutes ago". Computed client-side so it stays fresh on re-render.
-- **Cold-start UI** — confirm Step 6 default is final (or replace per decision).
+- **Stale notice.** Built in Step 7 (meta line under the dek). Here, just verify it appears when `generatedAt` is older than 210 min and reads "last updated {N} minutes ago".
+- **Cold-start UI** — confirm the cold-start copy (decided in Step 6) renders correctly.
 - **Refresh failure path** — already returns 503 from Step 5; verify the page still serves the previous good entry after a failed refresh (no frontend change needed if Step 5 is correct).
 - **Duplicate-headline policy** applied per decision above.
 
 **Changes — polish:**
 - `app/favicon.ico` — black square or simple monogram.
 - `app/layout.tsx` metadata: `title: 'The News of the Day'`, `description: 'One LLM-synthesized story, refreshed every 3 hours.'`.
-- `public/og.png` — 1200×630, title in Plantin on white.
+- `public/og.png` — 1200×630, title in Georgia on white.
 - `public/robots.txt` permitting indexing.
 - Final pass on `CLAUDE.md` "Still open" section — convert resolved items to decisions.
 
 **Verification:**
-- Back-date `generatedAt` to 4 hours ago in Redis → stale warning appears in red.
+- Back-date `generatedAt` to 4 hours ago in Redis → stale notice appears in the meta line.
 - Lighthouse SEO ≥ 95.
 - Share the URL in a chat that unfurls OG → image renders.
 - `/favicon.ico` and `/robots.txt` both 200.
@@ -384,7 +410,7 @@ The original Step 5 wired Tavily + Nebius + KV in one PR. We split it:
 - **5a** proves the non-LLM half end-to-end (auth, route, KV write, type contract) with a stub `synthesizeNews()` that fakes a `NewsEntry` from the first crawled article.
 - **5b** replaces the stub with the real Nebius call.
 
-Smaller diffs, easier to bisect when something breaks, and the Step 6 frontend can be built against a real (if dumb) KV entry instead of a hand-seeded one.
+Smaller diffs, easier to bisect when something breaks, and the Step 7 frontend can be built against a real (if dumb) KV entry instead of a hand-seeded one.
 
 ### Server-overridden `date.date` and `news.generatedAt` *(Step 5a/5b)*
 
@@ -426,7 +452,7 @@ Available model IDs: <https://tokenfactory.nebius.com/models>.
 
 ---
 
-## End-to-end verification (after Step 8)
+## End-to-end verification (after Step 9)
 
 The project is "done" when:
 - The Vercel production URL renders a real (cron-generated) news entry, not a fixture.
