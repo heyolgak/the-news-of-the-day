@@ -1,4 +1,4 @@
-# Monocle — Style Reference
+# Style Reference
 > Ink-on-paper minimalist; a finely printed journal on pristine stock.
 
 **Theme:** light

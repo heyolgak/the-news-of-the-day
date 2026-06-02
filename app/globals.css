@@ -1,26 +1,54 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  /* Colors */
+  --color-canvas-white: #ffffff;
+  --color-printers-black: #000000;
+  --color-sterling-gray: #6e6e6e;
+  --color-zinc-gray: #d9d9d9;
+  --color-editorial-yellow: #ffc500;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Typography — Families */
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: 'Helvetica Neue', Arial, sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Typography — Scale */
+  --text-caption: 13px;     --leading-caption: 1.5;     --tracking-caption: 0.01px;
+  --text-body: 16px;        --leading-body: 1.5;        --tracking-body: 0.01px;
+  --text-subheading: 24px;  --leading-subheading: 1.25; --tracking-subheading: -0.48px;
+  --text-heading: 32px;     --leading-heading: 1.15;    --tracking-heading: -0.64px;
+  --text-display: 40px;     --leading-display: 1.13;    --tracking-display: -0.8px;
+
+  /* Typography — Weights */
+  --font-weight-regular: 400;
+  --font-weight-bold: 700;
+
+  /* Spacing (all retained) */
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-40: 40px;
+  --spacing-80: 80px;
+  --spacing-216: 216px;
+
+  /* Layout */
+  --page-max-width: 1296px;
+  --section-gap: 32px;
+  --card-padding: 16px;
+  --element-gap: 4px;
+
+  /* Border Radius */
+  --radius-cards: 8px;
+  --radius-buttons: 0px;
+  --radius-navbadges: 50%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas-white);
+  color: var(--color-printers-black);
+  font-family: var(--font-sans);
 }
