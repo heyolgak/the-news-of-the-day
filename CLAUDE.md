@@ -4,20 +4,21 @@ Context for future Claude sessions working on this repo. Full spec lives in [RFC
 
 ## What this is
 
-A one-page website that shows a single LLM-synthesized "news of the day" with the sources it was built from, refreshed every 3 hours. Personal project, partly a vehicle for learning Vercel Cron, Tavily, Nebius, and Vercel KV.
+A one-page website that shows a single LLM-synthesized "news of the day" with the sources it was built from, refreshed every 3 hours. Personal project, partly a vehicle for learning Vercel Cron, Tavily, Nebius, and Upstash Redis (via Vercel Marketplace).
 
 ## Architecture (at a glance)
 
 - **Next.js** (TypeScript + Tailwind, App Router) deployed on **Vercel**.
-- **Vercel Cron** (every 3 hours, `0 */3 * * *`) → `/api/refresh` (secret-validated) → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Vercel KV** (key `news:latest`).
-- **`/api/latest`** reads KV, returns the JSON to the frontend.
-- Browser never touches KV directly.
+- **Vercel Cron** (every 3 hours, `0 */3 * * *`) → `/api/refresh` (secret-validated) → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (key `news:latest`).
+- The page (`app/page.tsx`) is a **server component** that reads KV directly via `lib/kv.ts` (`getLatestNews()`) — it does **not** call `/api/latest`.
+- **`/api/latest`** is an auxiliary public JSON endpoint that also reads KV; it's not consumed by the page.
+- Browser never touches KV directly (all KV reads happen server-side).
 
 Sequence diagram is in `RFC.md` → Proposed solution.
 
 ## Data contract
 
-The value at KV `news:latest` is a `NewsEntry`:
+The value at the Upstash Redis key `news:latest` is a `NewsEntry`:
 
 ```ts
 type NewsEntry = {
