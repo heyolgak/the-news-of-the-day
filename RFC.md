@@ -15,7 +15,7 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Verc
 - No comments, reactions, or social features.
 - No multi-story feed — exactly one news item per refresh.
 - No mobile app — responsive web only.
-- No live/breaking-news guarantees — hourly refresh, not real-time.
+- No live/breaking-news guarantees — refreshed every 3 hours, not real-time.
 - No editorial control panel — the LLM's output is what ships (no human-in-the-loop step in v1).
 
 ## Success criteria
@@ -29,7 +29,7 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Verc
 
 ### Sequence diagram
 
-The hourly refresh runs server-side; the browser only reads from `/api/latest`.
+The refresh runs server-side every 3 hours; KV is read server-side (the browser never reads KV directly).
 
 ```mermaid
 sequenceDiagram
@@ -39,9 +39,10 @@ sequenceDiagram
   participant N as Nebius
   participant KV as Upstash Redis
   participant V as Visitor
+  participant P as Vercel page (server)
   participant L as Vercel /api/latest
 
-  Note over C,KV: Hourly refresh
+  Note over C,KV: Refresh every 3 hours
   C->>R: scheduled GET + secret
   R->>R: validate cron secret
   R->>T: crawl sources
@@ -53,10 +54,11 @@ sequenceDiagram
   R-->>C: 200 done
 
   Note over V,KV: Page load (later)
-  V->>L: GET /api/latest
-  L->>KV: GET news:latest
-  KV-->>L: news payload
-  L-->>V: render HTML
+  V->>P: GET / (server component)
+  P->>KV: GET news:latest
+  KV-->>P: news payload
+  P-->>V: render HTML
+  Note over P,L: /api/latest is an auxiliary JSON endpoint (also reads KV; not used by the page)
 ```
 
 ### Tools
@@ -66,20 +68,20 @@ sequenceDiagram
 | Write & edit code | Claude Code (desktop) |
 | Preview UI while building | Browser at `localhost:3000` |
 | Web framework | Next.js (TypeScript + Tailwind) |
-| Hourly refresh trigger | Vercel Cron |
+| 3-hourly refresh trigger | Vercel Cron |
 | Crawl news sources | Tavily API (called from `/api/refresh`) |
 | Synthesize daily news | Nebius-hosted LLM (called from `/api/refresh`) |
 | Refresh + secret validation | Route `/api/refresh` |
 | Store latest news | Upstash Redis via Vercel Marketplace (key `news:latest`) |
-| Serve news to the page | Route `/api/latest` |
-| Render the page | Frontend (reads `/api/latest`) |
+| Serve news as JSON (auxiliary) | Route `/api/latest` (reads KV; not used by the page) |
+| Render the page | Server component (`app/page.tsx`) reading KV directly via `lib/kv.ts` |
 | Host the live site | Vercel |
 | Version control & auto-deploy | GitHub → Vercel |
 | Secrets / API keys | `.env.local` + Vercel env vars (incl. `CRON_SECRET`) |
 
 ### Data contract
 
-The value at the Redis key `news:latest` is a single JSON object written by `/api/refresh` and read by `/api/latest` (which returns it to the frontend as-is). Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
+The value at the Redis key `news:latest` is a single JSON object written by `/api/refresh`. The page (`app/page.tsx`) reads it directly from KV server-side via `lib/kv.ts`; `/api/latest` returns the same object as-is for any programmatic consumer. Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
 
 ```ts
 type NewsEntry = {
@@ -130,7 +132,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 ### Observability
 
 - **Logs.** `/api/refresh` logs are visible in the Vercel dashboard (Project → Logs). Every run logs: start, Tavily query count + status, Nebius model + status, KV write status, total duration. Errors log with stack.
-- **Stale warning on the page.** `/api/latest` includes `generatedAt`. The frontend shows it as "Generated at …" in the meta line under the dek; if it's older than 210 minutes (3h cycle + 30 min slack), that line also shows a "last updated X minutes ago" notice (styled per `DESIGN.md`).
+- **Stale warning on the page.** The `NewsEntry` includes `generatedAt`. The page shows it as "Generated at …" in the meta line under the dek; if it's older than 210 minutes (3h cycle + 30 min slack), that line also shows a "last updated X minutes ago" notice (styled per `DESIGN.md`).
 
 ## Open questions
 
@@ -237,7 +239,7 @@ Dashboard and password-manager work only — no commits, no branch.
 **Goal:** A reusable `crawlSources()` that returns normalized articles. Not wired into `/api/refresh` yet — that's Step 5.
 
 **Changes:**
-- `npm install @tavily/sdk` (or `fetch` directly, pick after smoke-test).
+- No SDK — use the global `fetch` against Tavily's `/search` (decided after smoke-test; see [Tavily access via direct `fetch`](#tavily-access-via-direct-fetch-not-tavilysdk-step-4)).
 - `lib/tavily.ts`:
   - Constant `SOURCES` — the 8 outlets from [News sources list](#news-sources-list).
   - `type TavilyArticle = { outlet, title, url, publishedAt?, body, imageUrl? }`.
@@ -258,7 +260,7 @@ Dashboard and password-manager work only — no commits, no branch.
 **Goal:** `POST /api/refresh` (still secret-guarded but manually triggered — cron lands in Step 8) crawls, synthesizes, writes Redis, returns the new `NewsEntry`.
 
 **Changes:**
-- `npm install openai` (Nebius is OpenAI-API-compatible).
+- No SDK — call the Nebius REST endpoint directly with the global `fetch` (Nebius is OpenAI-API-compatible, but a single chat-completions POST doesn't need a client library). See [Nebius via direct `fetch`](#nebius-via-direct-fetch-step-5b).
 - `lib/nebius.ts`:
   - `synthesizeNews(articles, todayIso): Promise<NewsEntry>`.
   - System prompt per [LLM prompt sketch](#llm-prompt-sketch). Encodes wire-service tone, ≤12-word headline, ≤30-word dek, paraphrase-not-quote rule, 3–6 sources, JSON output matching `NewsEntry`.
@@ -306,7 +308,7 @@ We don't have a finished comp — only the style rules in `DESIGN.md` and a stru
 
 Cold-start copy was decided in Step 6: centered "First refresh pending — check back shortly" in Georgia, no image, no sources block.
 
-**Goal:** The single page matches `DESIGN.md` → Page Structure (v1) and reads from `/api/latest` (the browser never touches KV directly).
+**Goal:** The single page matches `DESIGN.md` → Page Structure (v1) and reads KV server-side via `lib/kv.ts` (the browser never touches KV directly).
 
 **Changes:**
 - Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
@@ -392,6 +394,10 @@ Decisions made during execution that the original RFC didn't lock down. Recorded
 ### Tavily access via direct `fetch`, not `@tavily/sdk` *(Step 4)*
 
 Tavily's `/search` is a single POST returning clean JSON. An SDK would have added a few hundred npm packages for ergonomic gain we don't need. `lib/tavily.ts` uses Node's global `fetch` directly.
+
+### Nebius via direct `fetch` *(Step 5b)*
+
+Same reasoning as Tavily. Synthesis is a single chat-completions POST to `https://api.studio.nebius.com/v1/chat/completions` with `response_format: { type: 'json_object' }`. Nebius is OpenAI-API-compatible, so the `openai` SDK would work — but the one call we make doesn't justify the dependency. `lib/nebius.ts` uses the global `fetch` directly; there's no `openai` package in `package.json`.
 
 ### Per-result images, not response-level *(Step 4)*
 

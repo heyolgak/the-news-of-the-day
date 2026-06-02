@@ -25,10 +25,11 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Upst
 ## Local dev
 
 ```bash
-cp .env.example .env.local   # then fill in real values
 npm install
 npm run dev
 ```
+
+Create a `.env.local` with the required secrets before running — see [RFC.md](RFC.md) → Step 2 for the authoritative list of env vars.
 
 Open [http://localhost:3000](http://localhost:3000).
 
