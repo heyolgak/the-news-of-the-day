@@ -58,7 +58,7 @@ sequenceDiagram
   P->>KV: GET news:latest
   KV-->>P: news payload
   P-->>V: render HTML
-  Note over P,L: /api/latest is an auxiliary JSON endpoint (also reads KV, not used by the page)
+  Note over P,L: /api/latest is an auxiliary JSON endpoint<br/>(also reads KV, not used by the page)
 ```
 
 ### Tools
