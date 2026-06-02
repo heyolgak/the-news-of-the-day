@@ -123,9 +123,9 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ### LLM prompt sketch
 
-**System prompt (sketch).** You are a wire-service editor. Given the articles below, identify the single most important story of the day and write one headline (≤12 words) and one dek (≤30 words, one sentence). Use only facts present in the provided articles — do not infer, speculate, or add context not in the sources. If sources disagree on a fact, omit it. Paraphrase rather than quote — no verbatim passages over ~15 words from any single source. Pick a tone that is calm and neutral (Reuters/AP style), not opinionated. Choose between 3 and 6 sources for the `sources` array, preferring ones that independently confirm the story. If a usable image URL appears in the source articles, include it as `imageUrl`. Return a JSON object matching the `NewsEntry` schema — nothing else, no prose around it.
+**System prompt** You are a wire-service editor. Given the articles below, identify the single most important story of the day and write one headline (≤12 words) and one dek (≤30 words, one sentence). Use only facts present in the provided articles — do not infer, speculate, or add context not in the sources. If sources disagree on a fact, omit it. Paraphrase rather than quote — no verbatim passages over ~15 words from any single source. Pick a tone that is calm and neutral (Reuters/AP style), not opinionated. Choose between 3 and 6 sources for the `sources` array, preferring ones that independently confirm the story. If a usable image URL appears in the source articles, include it as `imageUrl`. Return a JSON object matching the `NewsEntry` schema — nothing else, no prose around it.
 
-**User prompt (sketch).** Each Tavily article is passed as `{ outlet, title, url, publishedAt, body }` in a JSON array. Today's date (ISO, e.g. "2026-05-21") is provided alongside as a string.
+**User prompt** Each Tavily article is passed as `{ outlet, title, url, publishedAt, body }` in a JSON array. Today's date (ISO, e.g. "2026-05-21") is provided alongside as a string.
 
 **Failure modes.** If fewer than 3 articles are returned by Tavily, the refresh aborts and KV is not overwritten. If the LLM returns invalid JSON or fewer than 3 sources, the refresh aborts. The previous `news:latest` stays in place until the next successful run.
 
@@ -136,10 +136,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ## Open questions
 
-- **Nebius model choice.** Which specific Nebius-hosted model do we use? Trade-off between cost, latency, and JSON-mode quality. Decide after smoke-testing.
-- **Tavily query budget.** Free tier has a monthly quota — at 8 refreshes/day × 8 sources = 64 queries/day, ~1900/month. Need to verify this fits before going live.
-- **Cold-start state.** On first deploy, KV is empty until the first cron fires. What does `/` show in the first 0–3 hours? (Options: a placeholder "first refresh pending"; trigger refresh on first load; etc.)
-- **Duplicate-story handling.** If two consecutive refreshes pick the same headline, do we still overwrite, or keep the older `generatedAt`? Probably overwrite, but worth deciding.
+- **Tavily query budget.** Free tier has a monthly quota — at 8 refreshes/day × 8 sources = 64 queries/day, ~1900/month. Need to verify this fits before going live. (Still open — operational check, not yet live.)
 
 ## Implementation plan
 
