@@ -12,10 +12,11 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Upst
 
 ## Architecture (at a glance)
 
-- **Next.js** (TypeScript + Tailwind, App Router) deployed on **Vercel**.
-- **Vercel Cron** (every 3 hours, `0 */3 * * *`) → `/api/refresh` (secret-validated) → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (key `news:latest`).
-- The page is a server component that reads Redis directly; **`/api/latest`** is an auxiliary JSON endpoint exposing the same data.
-- Browser never touches Redis directly.
+**Next.js** (App Router, TypeScript + Tailwind) on **Vercel**.
+
+Every 3h: **Vercel Cron** → `/api/refresh` → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (`news:latest`). The page reads Redis server-side and renders it; `/api/latest` serves the same JSON.
+
+Full sequence diagram + data contract: [RFC.md](RFC.md).
 
 ## Docs
 
@@ -25,11 +26,10 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Upst
 ## Local dev
 
 ```bash
+cp .env.example .env.local   # then fill in your API keys
 npm install
 npm run dev
 ```
-
-Create a `.env.local` with the required secrets before running — see [RFC.md](RFC.md) → Step 2 for the authoritative list of env vars.
 
 Open [http://localhost:3000](http://localhost:3000).
 
