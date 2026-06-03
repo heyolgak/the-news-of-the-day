@@ -51,7 +51,7 @@ No user accounts, no archive page, no comments, no multi-story feed, no mobile a
 
 - Local: `~/Desktop/Vibecoding/the-news-of-the-day/`
 - Sibling design mockups: `~/Desktop/Vibecoding/the-news-of-the-day-screens/` (the `news-app-tools.md` there is the original tooling brief)
-- GitHub: `heyolgak/the-news-of-the-day` (private)
+- GitHub: `heyolgak/the-news-of-the-day` (public)
 
 ## Still open
 
