@@ -1,4 +1,5 @@
 import { requireEnv } from './env';
+import { fetchWithRetry } from './fetchWithRetry';
 import type { TavilyArticle } from './tavily';
 import type { NewsEntry, NewsSource } from './types';
 
@@ -10,7 +11,7 @@ const SYSTEM_PROMPT = `You are a wire-service editor. Given the articles below, 
 
 Use only facts present in the provided articles — do not infer, speculate, or add context not in the sources. If sources disagree on a fact, omit it. Paraphrase rather than quote — no verbatim passages over ~15 words from any single source. Pick a tone that is calm and neutral (Reuters/AP style), not opinionated.
 
-Choose between 3 and 6 sources for the \`sources\` array, preferring ones that independently confirm the story. Use the exact \`outlet\`, \`title\`, and \`url\` strings as they appear in the input — do not paraphrase URLs or invent new ones.
+Choose between 3 and 6 source URLs for the \`sources\` array, preferring ones that independently confirm the story. Each must be one of the exact \`url\` strings as it appears in the input — do not modify a URL or invent a new one. (Titles and outlets are looked up from the input by URL, so return URLs only.)
 
 If a usable image URL appears in the source articles you chose, include it as \`imageUrl\` — and it must be one of the imageUrls present in the input.
 
@@ -22,9 +23,7 @@ Return a JSON object with this exact shape, and nothing else:
     "dek": "string, ≤30 words, one sentence",
     "imageUrl": "string URL (optional)"
   },
-  "sources": [
-    { "title": "string", "outlet": "string", "url": "string" }
-  ]
+  "sources": ["url string from the input", "url string from the input"]
 }`;
 
 function isNonEmptyString(v: unknown): v is string {
@@ -53,22 +52,26 @@ export async function synthesizeNews(
     })),
   };
 
-  const res = await fetch(NEBIUS_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const res = await fetchWithRetry(
+    NEBIUS_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: JSON.stringify(userPayload) },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: JSON.stringify(userPayload) },
-      ],
-    }),
-  });
+    { timeoutMs: 90_000 },
+  );
 
   if (!res.ok) {
     throw new Error(`Nebius HTTP ${res.status}: ${await res.text()}`);
@@ -110,27 +113,22 @@ export async function synthesizeNews(
     throw new Error(`Nebius: sources must be array of 3-6, got ${got}`);
   }
 
-  const crawledUrls = new Set(articles.map((a) => a.url));
+  // Map URL -> crawled article so source title/outlet are taken from our own
+  // crawl data, never authored or chosen-as-text by the model (OQ2).
+  const crawledByUrl = new Map(articles.map((a) => [a.url, a]));
   const crawledImages = new Set(
     articles.flatMap((a) => (a.imageUrl ? [a.imageUrl] : [])),
   );
 
   const validatedSources: NewsSource[] = sources.map((s, i) => {
-    if (typeof s !== 'object' || s === null) {
-      throw new Error(`Nebius: source[${i}] is not an object`);
+    if (!isNonEmptyString(s)) {
+      throw new Error(`Nebius: source[${i}] is not a URL string`);
     }
-    const src = s as Record<string, unknown>;
-    if (
-      !isNonEmptyString(src.title) ||
-      !isNonEmptyString(src.outlet) ||
-      !isNonEmptyString(src.url)
-    ) {
-      throw new Error(`Nebius: source[${i}] missing required fields`);
+    const article = crawledByUrl.get(s);
+    if (!article) {
+      throw new Error(`Nebius: source[${i}] url hallucinated: ${s}`);
     }
-    if (!crawledUrls.has(src.url)) {
-      throw new Error(`Nebius: source[${i}] url hallucinated: ${src.url}`);
-    }
-    return { title: src.title, outlet: src.outlet, url: src.url };
+    return { title: article.title, outlet: article.outlet, url: article.url };
   });
 
   let imageUrl: string | undefined;

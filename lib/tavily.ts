@@ -1,4 +1,5 @@
 import { requireEnv } from './env';
+import { fetchWithRetry } from './fetchWithRetry';
 
 export type TavilyArticle = {
   outlet: string;
@@ -37,20 +38,24 @@ async function queryOutlet(
   domain: string,
   apiKey: string,
 ): Promise<TavilyArticle[]> {
-  const res = await fetch('https://api.tavily.com/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query: 'top news today',
-      topic: 'news',
-      include_domains: [domain],
-      include_images: true,
-      max_results: 10,
-      days: 1,
-      search_depth: 'basic',
-    }),
-  });
+  const res = await fetchWithRetry(
+    'https://api.tavily.com/search',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query: 'top news today',
+        topic: 'news',
+        include_domains: [domain],
+        include_images: true,
+        max_results: 10,
+        days: 1,
+        search_depth: 'basic',
+      }),
+    },
+    { timeoutMs: 20_000 },
+  );
 
   if (!res.ok) {
     throw new Error(`Tavily ${outlet}: HTTP ${res.status} ${await res.text()}`);
