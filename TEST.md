@@ -1,8 +1,8 @@
 # Manual test guide
 
-How to verify the app locally end-to-end. This file is the canonical manual-test runbook — keep it up to date as the project grows (Step 6 frontend will add browser-based checks; Step 7 cron will add a cron-trigger check).
+How to verify the app locally end-to-end. This file is the canonical manual-test runbook — keep it up to date as the project grows.
 
-> Sections marked **(Step X)** are specific to that step. Steps 0–2, 5, 7 are stable across all backend PRs.
+> Sections marked **(Step X)** are specific to that step. Steps 0–2, 5, 7 are stable across all backend PRs. The scheduled refresh itself runs in GitHub Actions (Step 8) — see step 8 below.
 
 Three things to verify on any backend change: (1) the refresh runs and writes a real synthesized story, (2) the data sticks in KV, and (3) the JSON shape matches the contract.
 
@@ -48,8 +48,10 @@ Shows whatever's currently stored. Note the `news.headline` so you can confirm i
 
 ```bash
 SECRET=$(grep '^CRON_SECRET=' .env.local | cut -d= -f2-)
-curl -X POST -H "x-cron-secret: $SECRET" http://localhost:3000/api/refresh | jq .
+curl -X POST -H "Authorization: Bearer $SECRET" http://localhost:3000/api/refresh | jq .
 ```
+
+> Or run the scheduled pipeline directly (no server needed): `npm run refresh:local`.
 
 **Expect:**
 - ~30–60 seconds of waiting (Tavily ~10s + Nebius synthesis ~20–50s).
@@ -75,7 +77,7 @@ Response should be **identical** to step 3 and reflect the new headline.
 To be paranoid:
 
 ```bash
-curl -s -X POST -H "x-cron-secret: $SECRET" http://localhost:3000/api/refresh | jq . > /tmp/refresh.json
+curl -s -X POST -H "Authorization: Bearer $SECRET" http://localhost:3000/api/refresh | jq . > /tmp/refresh.json
 curl -s http://localhost:3000/api/latest | jq . > /tmp/latest.json
 diff /tmp/refresh.json /tmp/latest.json && echo IDENTICAL
 ```
@@ -111,6 +113,19 @@ Remove the line and restart to return to the default.
 ## 7. Stop dev when done
 
 Ctrl-C in terminal 1.
+
+---
+
+## 8. Scheduled refresh — GitHub Actions *(Step 8)*
+
+The cron lives in GitHub Actions, not Vercel. To verify it:
+
+1. **GitHub → Actions → Refresh news → Run workflow** (the `workflow_dispatch` button).
+2. The job should go **green**; open its log and confirm the staged `[refresh]` lines (crawl count, total ms, headline).
+3. `curl -s https://<deployment>/api/latest | jq .news.headline` reflects the new story; reload the live page to confirm.
+4. **Failure signal:** with a deliberately broken secret the job goes **red** and `news:lastRun` records `status: "error"` — the page keeps serving the previous good entry.
+
+Secrets must be set under **Settings → Secrets and variables → Actions**: `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` (+ optional `NEBIUS_MODEL`).
 
 ---
 

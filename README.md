@@ -1,6 +1,6 @@
 # The News of the Day
 
-The News of the Day is a one-page website that surfaces a single, LLM-synthesized "news of the day" with links to the sources it was built from, refreshed every 3 hours.
+The News of the Day is a one-page website that surfaces a single, LLM-synthesized "news of the day" with links to the sources it was built from, refreshed every 6 hours.
 
 ## Problem & goal
 
@@ -8,13 +8,13 @@ Following the daily news through dozens of outlets is noisy and time-consuming, 
 
 The goal is a calm, glanceable replacement for doomscrolling a feed — open the page, get one well-sourced story, close the tab.
 
-A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Upstash Redis.
+A secondary goal is hands-on practice with Vercel, Tavily, Nebius, and Upstash Redis.
 
 ## Architecture (at a glance)
 
-**Next.js** (App Router, TypeScript + Tailwind) on **Vercel**.
+**Next.js** (App Router, TypeScript + Tailwind) on **Vercel** for the read side.
 
-Every 3h: **Vercel Cron** → `/api/refresh` → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (`news:latest`). The page reads Redis server-side and renders it; `/api/latest` serves the same JSON.
+Every 6h a scheduled **GitHub Actions** workflow runs the refresh pipeline → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (`news:latest`). The Vercel page reads Redis server-side and renders it; `/api/latest` serves the same JSON. `/api/refresh` is a manual/backup trigger running the same pipeline.
 
 Full sequence diagram + data contract: [RFC.md](RFC.md).
 
@@ -32,6 +32,16 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Refresh
+
+The refresh runs automatically every 6h via GitHub Actions (`.github/workflows/refresh.yml`). To run it on demand:
+
+- **GitHub** — Actions tab → **Refresh news** → **Run workflow** (`workflow_dispatch`).
+- **Locally** — `npm run refresh:local` (runs `scripts/refresh.ts` against the keys in `.env.local`; writes the live `news:latest`).
+- **Backup HTTP route** — `curl -X POST https://<deployment>/api/refresh -H "Authorization: Bearer $CRON_SECRET"`.
+
+Every run records its outcome to the `news:lastRun` key; a failed scheduled run also turns the GitHub Actions job red.
 
 ## Disclaimer
 

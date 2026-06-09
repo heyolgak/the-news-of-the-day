@@ -1,4 +1,35 @@
-# Step 8 — Cron schedule + secret hardening (working plan)
+# Step 8 — Scheduled refresh (working plan + superseded history)
+
+> **⚠️ SUPERSEDED (2026-06-09) — the Vercel-Cron approach below was abandoned.**
+>
+> **The reframe.** The plan below was stuck fighting two Vercel-Hobby walls at once:
+> **daily-only cron** *and* the **60s function ceiling**. Both forced concessions
+> (daily cadence, 26h stale window) and kept **OQ1/OQ4** (latency reliability under
+> 60s) live on every run. But neither wall is intrinsic — the refresh is just
+> "crawl → synthesize → write one KV key", and `lib/tavily.ts` / `lib/nebius.ts` /
+> `lib/kv.ts` are framework-agnostic.
+>
+> **What shipped instead:** the refresh is **offloaded to a scheduled GitHub Actions
+> workflow** (`.github/workflows/refresh.yml`, `0 */6 * * *`) running
+> `scripts/refresh.ts` → `lib/refresh.ts#runRefresh()`. This dissolves both walls:
+> arbitrary-interval cron (so **6h** cadence, not daily) and a multi-hour runtime
+> (so **OQ1/OQ4 are moot** — the reasoning model is fine again, with real retries).
+> `/api/refresh` survives as a Bearer-authed **manual/backup** trigger. Stale
+> threshold is **390 min** (6h + slack), not 26h. **6h not 3h** because the Tavily
+> free tier (~1,000/mo) fits 4 runs/day (~960/mo) but not 8 (~1,920/mo).
+>
+> Shipped as three stacked PRs: (1) the offload, (2) pipeline-gap fixes — per-call
+> fetch timeouts + one transient retry (`lib/fetchWithRetry.ts`), a `news:lastRun`
+> dead-man's-switch, and the OQ2 source-title fix (derive title/outlet from the
+> crawl by URL), (3) the backup route + 390-min stale + this docs sweep.
+>
+> The Kimi model swap noted below was **testing-only, never adopted**.
+>
+> The rest of this file is kept as the **historical record** of the abandoned
+> Vercel-Cron approach and the analysis that led to the offload. Its line
+> references and "keep-set" no longer reflect `main`.
+
+---
 
 > **Saved 2026-06-04.** A first implementation attempt was made and then
 > **fully reverted** — the working tree is clean and `main` is untouched. This
