@@ -86,7 +86,7 @@ Top → bottom:
 3. **Lead image** — inside a content card; bottom-right photo-credit overlay marked **TBD** (no credit field in the data contract yet — kept as a placeholder, not dropped). The lead image/headline are **not** links (the lead is synthesized from many sources).
 4. **Headline.**
 5. **Dek.**
-6. **Meta line** — reuses the reference's under-dek byline slot. Shows **"Generated at {generatedAt}"**. When `generatedAt` is older than **210 min**, this line also shows the **stale notice** "last updated X minutes ago".
+6. **Meta line** — reuses the reference's under-dek byline slot. Shows **"Generated at {generatedAt}"**. When `generatedAt` is older than **390 min** (6h cadence + slack), this line also shows the **stale notice** "last updated X minutes ago".
 7. **SOURCES** — section heading.
 8. **Source list** — hairline-separated items. Each is the source title linked to its `url`, followed by **"By {outlet}"** with the outlet linked (`target=_blank rel=noopener`).
 9. **Footer** — centered "© {year} The News of the Day".

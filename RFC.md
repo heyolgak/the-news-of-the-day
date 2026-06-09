@@ -2,11 +2,11 @@
 
 ## Problem & goal
 
-Following the daily news through dozens of outlets is noisy and time-consuming, yet most days have one story that actually matters. The News of the Day is a one-page website that surfaces a single, LLM-synthesized "news of the day" with links to the sources it was built from, refreshed every 3 hours.
+Following the daily news through dozens of outlets is noisy and time-consuming, yet most days have one story that actually matters. The News of the Day is a one-page website that surfaces a single, LLM-synthesized "news of the day" with links to the sources it was built from, refreshed every 6 hours.
 
 The goal is a calm, glanceable replacement for doomscrolling a feed — open the page, get one well-sourced story, close the tab.
 
-A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Vercel KV.
+A secondary goal is hands-on practice with Vercel, Tavily, Nebius, and Vercel KV.
 
 ## Non-goals
 
@@ -15,26 +15,26 @@ A secondary goal is hands-on practice with Vercel Cron, Tavily, Nebius, and Verc
 - No comments, reactions, or social features.
 - No multi-story feed — exactly one news item per refresh.
 - No mobile app — responsive web only.
-- No live/breaking-news guarantees — refreshed every 3 hours, not real-time.
+- No live/breaking-news guarantees — refreshed every 6 hours, not real-time.
 - No editorial control panel — the LLM's output is what ships (no human-in-the-loop step in v1).
 
 ## Success criteria
 
 - The site is live on a public Vercel URL (custom domain optional).
-- Vercel Cron has run `/api/refresh` every 3 hours for 7 consecutive days with no manual intervention.
+- The scheduled GitHub Actions workflow has run the refresh pipeline every 6 hours for 7 consecutive days with no manual intervention.
 - On any visit, the page renders a single headline + dek + image + at least 3 source links.
-- The main news shows a "last updated" timestamp; if the timestamp is older than 210 minutes, a stale warning is shown.
+- The main news shows a "last updated" timestamp; if the timestamp is older than 390 minutes, a stale warning is shown.
 
 ## Proposed solution
 
 ### Sequence diagram
 
-The refresh runs server-side every 3 hours; KV is read server-side (the browser never reads KV directly).
+The refresh runs every 6 hours in GitHub Actions (off Vercel); KV is read server-side by the Vercel page (the browser never reads KV directly).
 
 ```mermaid
 sequenceDiagram
-  participant C as Vercel Cron
-  participant R as Vercel /api/refresh
+  participant C as GitHub Actions (cron)
+  participant R as runRefresh() pipeline
   participant T as Tavily
   participant N as Nebius
   participant KV as Upstash Redis
@@ -42,16 +42,15 @@ sequenceDiagram
   participant P as Vercel page (server)
   participant L as Vercel /api/latest
 
-  Note over C,KV: Refresh every 3 hours
-  C->>R: scheduled GET + secret
-  R->>R: validate cron secret
+  Note over C,KV: Scheduled refresh every 6 hours
+  C->>R: run scripts/refresh.ts
   R->>T: crawl sources
   T-->>R: articles
   R->>N: send articles + prompt
   N-->>R: synthesized news
-  R->>KV: store news:latest
+  R->>KV: store news:latest (+ news:lastRun)
   KV-->>R: ok
-  R-->>C: 200 done
+  R-->>C: exit 0 (non-zero on failure → job red)
 
   Note over V,KV: Page load (later)
   V->>P: GET / (server component)
@@ -68,16 +67,17 @@ sequenceDiagram
 | Write & edit code | Claude Code (desktop) |
 | Preview UI while building | Browser at `localhost:3000` |
 | Web framework | Next.js (TypeScript + Tailwind) |
-| 3-hourly refresh trigger | Vercel Cron |
-| Crawl news sources | Tavily API (called from `/api/refresh`) |
-| Synthesize daily news | Nebius-hosted LLM (called from `/api/refresh`) |
-| Refresh + secret validation | Route `/api/refresh` |
+| 6-hourly refresh trigger | GitHub Actions scheduled workflow (`.github/workflows/refresh.yml`) |
+| Refresh pipeline | `scripts/refresh.ts` → `lib/refresh.ts#runRefresh()` |
+| Crawl news sources | Tavily API |
+| Synthesize daily news | Nebius-hosted LLM |
+| Manual / backup refresh trigger | Route `/api/refresh` (Bearer-auth, same pipeline) |
 | Store latest news | Upstash Redis via Vercel Marketplace (key `news:latest`) |
 | Serve news as JSON (auxiliary) | Route `/api/latest` (reads KV; not used by the page) |
 | Render the page | Server component (`app/page.tsx`) reading KV directly via `lib/kv.ts` |
 | Host the live site | Vercel |
 | Version control & auto-deploy | GitHub → Vercel |
-| Secrets / API keys | `.env.local` + Vercel env vars (incl. `CRON_SECRET`) |
+| Secrets / API keys | GitHub Actions secrets (refresh) + Vercel env vars (read side, incl. `CRON_SECRET`) + `.env.local` (local) |
 
 ### Data contract
 
@@ -131,18 +131,19 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ### Observability
 
-- **Logs.** `/api/refresh` logs are visible in the Vercel dashboard (Project → Logs). Every run logs: start, Tavily query count + status, Nebius model + status, KV write status, total duration. Errors log with stack.
-- **Stale warning on the page.** The `NewsEntry` includes `generatedAt`. The page shows it as "Generated at …" in the meta line under the dek; if it's older than 210 minutes (3h cycle + 30 min slack), that line also shows a "last updated X minutes ago" notice (styled per `DESIGN.md`).
+- **Logs.** Scheduled-refresh logs are in the **GitHub Actions** run log (Actions → Refresh news); the manual `/api/refresh` route's logs are in the Vercel dashboard (Project → Logs). Every run logs: crawl count, synthesis, KV write status, total duration. Errors log with stack.
+- **Dead-man's-switch.** Every run writes `{ at, status, error? }` to the `news:lastRun` KV key; a failing scheduled run also exits non-zero so the GitHub Actions job goes red (the built-in failure notification).
+- **Stale warning on the page.** The `NewsEntry` includes `generatedAt`. The page shows it as "Generated at …" in the meta line under the dek; if it's older than 390 minutes (6h cycle + 30 min slack), that line also shows a "last updated X minutes ago" notice (styled per `DESIGN.md`).
 
 ## Open questions
 
-- **Tavily query budget.** Free tier has a monthly quota — at 8 refreshes/day × 8 sources = 64 queries/day, ~1900/month. Need to verify this fits before going live. (Still open — operational check, not yet live.)
+- **Tavily query budget.** _Resolved by the 6h cadence._ At 8 sources × 4 refreshes/day = 32 queries/day ≈ **960/month**, within the free tier's ~1,000. (3h would have been ~1,920/mo and overrun it.) Confirm the account's actual plan limit in the Tavily dashboard before relying on it long-term.
 
 ## Implementation plan
 
 Executed as 7 small coding PRs, one no-code provisioning step (Step 2), and one design/docs step (Step 6), each merged to `main` independently so every PR gets its own Vercel preview deploy. Each PR is reviewable in under 15 minutes.
 
-Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, Vercel Cron) is done **locally before the step that uses it**, with throwaway scripts that are never committed.
+Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, GitHub Actions) is done **locally before the step that uses it**, with throwaway scripts that are never committed.
 
 Decisions deferred until the step that needs them:
 - Specific Nebius model — Step 5.
@@ -319,7 +320,7 @@ Cold-start copy was decided in Step 6: centered "First refresh pending — check
   - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding); bottom-right credit overlay is TBD. Not a link. Skip the block if absent.
   - **Headline** — Georgia 700, 40px display, tracking −0.8px.
   - **Dek** — Helvetica Neue, ~18–20px.
-  - **Meta line** — Helvetica Neue caption: "Generated at {generatedAt}"; when `generatedAt` is older than 210 min, also render the stale notice "last updated X minutes ago" (computed client-side, styled per `DESIGN.md`).
+  - **Meta line** — Helvetica Neue caption: "Generated at {generatedAt}"; when `generatedAt` is older than 390 min, also render the stale notice "last updated X minutes ago" (computed client-side, styled per `DESIGN.md`).
   - **Sources list** — hairline-separated rows: source title (Georgia) linked to `url`, then "By {outlet}" with the outlet linked, `target=_blank rel=noopener`.
   - **Footer** — Helvetica Neue caption: "© {year} The News of the Day".
 - Cold-start path: render the centered Georgia message only; no image, no sources.
@@ -328,35 +329,43 @@ Cold-start copy was decided in Step 6: centered "First refresh pending — check
 **Verification:**
 - With Redis populated: page matches `DESIGN.md` → Page Structure (v1) — masthead, date block, meta line, "By {outlet}" sources, Georgia headlines.
 - Clear Redis: page shows cold-start copy.
-- Back-date `generatedAt` past 210 min: stale notice appears in the meta line.
+- Back-date `generatedAt` past 390 min: stale notice appears in the meta line.
 - Lighthouse mobile + desktop pass on Performance + Accessibility.
 - Visual sanity check against the curated WSJ reference + screenshot.
 
 ---
 
-### Step 8 — Cron schedule + secret hardening
+### Step 8 — Scheduled refresh (GitHub Actions) + pipeline hardening
 
-**Smoke test first:** before opening this PR, deploy a one-off no-op cron via a temporary `vercel.json` hitting a logging-only endpoint on a tight schedule (e.g. `*/10 * * * *` for an hour). Confirm Vercel Cron actually fires in your account/region. Roll it back before opening the PR.
+**Reframed from the original "Vercel Cron" plan.** Vercel Hobby caps crons at daily
+granularity *and* functions at 60s — both of which would force concessions (daily cadence,
+26h stale window, fighting the ceiling on every run). Since the pipeline is just
+"crawl → synthesize → write one KV key" and the libs are framework-agnostic, the refresh is
+**offloaded to a scheduled GitHub Actions workflow** instead. This sidesteps both walls: an
+arbitrary-interval cron and a multi-hour runtime. See [STEP-8-PLAN.md](STEP-8-PLAN.md) for the
+full analysis. The repo lives on GitHub already.
 
-**Goal:** Vercel Cron triggers `/api/refresh` every 3 hours; secret validation uses the same code path as Step 5.
+**Goal:** a GitHub Actions workflow runs the refresh every 6 hours; `/api/refresh` survives
+as a Bearer-authed manual/backup trigger running the same pipeline.
 
-**Changes:**
-- `vercel.json`:
-  ```json
-  {
-    "crons": [
-      { "path": "/api/refresh", "schedule": "0 */3 * * *" }
-    ]
-  }
-  ```
-- Adjust `app/api/refresh/route.ts`:
-  - Accept either `GET` (cron) or `POST` (manual).
-  - Validate via `Authorization: Bearer ...` header against `CRON_SECRET`. Optionally keep `x-cron-secret` for manual-curl ergonomics.
-- Document the manual trigger in `README.md`.
+**Changes (shipped as three stacked PRs):**
+- `lib/refresh.ts` — `runRefresh()` extracts the crawl→synthesize→write pipeline (shared by
+  the script and the route so they can't drift); records `news:lastRun` on success and failure.
+- `scripts/refresh.ts` — calls `runRefresh()`; exits non-zero on failure (→ red GH job).
+- `.github/workflows/refresh.yml` — `schedule: '0 */6 * * *'` + `workflow_dispatch`; runs
+  `npm ci && npm run refresh` with secrets from GitHub Actions.
+- `app/api/refresh/route.ts` — `GET`+`POST`, `Authorization: Bearer <CRON_SECRET>` only
+  (`x-cron-secret` dropped); calls `runRefresh()`.
+- Pipeline hardening: per-call fetch timeouts + one transient retry (`lib/fetchWithRetry.ts`);
+  source `title`/`outlet` derived from the crawl by URL instead of trusting the model (OQ2).
+- `app/MetaLine.tsx` — `STALE_THRESHOLD_MIN` → 390 (6h + slack).
 
 **Verification:**
-- After merge, wait for the next `0 */3` slot or trigger manually from the Vercel dashboard. Function logs show the run; Redis updates; page reflects new content.
-- Unauthorized GET → 401.
+- GitHub → Actions → **Refresh news** → **Run workflow**: job green, log shows staged
+  `[refresh]` lines, Redis updates, page reflects new content on reload.
+- A deliberately broken secret → job **red**, `news:lastRun.status = "error"`, `news:latest`
+  untouched (previous good entry still served).
+- `POST /api/refresh` no auth → 401; with `Authorization: Bearer $CRON_SECRET` → 200.
 
 ---
 
@@ -367,14 +376,14 @@ Cold-start copy was decided in Step 6: centered "First refresh pending — check
 **Goal:** All RFC edge states are verified; basic SEO/social meta is set.
 
 **Changes — edge states:**
-- **Stale notice.** Built in Step 7 (meta line under the dek). Here, just verify it appears when `generatedAt` is older than 210 min and reads "last updated {N} minutes ago".
+- **Stale notice.** Built in Step 7 (meta line under the dek). Here, just verify it appears when `generatedAt` is older than 390 min and reads "last updated {N} minutes ago".
 - **Cold-start UI** — confirm the cold-start copy (decided in Step 6) renders correctly.
 - **Refresh failure path** — already returns 503 from Step 5; verify the page still serves the previous good entry after a failed refresh (no frontend change needed if Step 5 is correct).
 - **Duplicate-headline policy** applied per decision above.
 
 **Changes — polish:**
 - `app/favicon.ico` — black square or simple monogram.
-- `app/layout.tsx` metadata: `title: 'The News of the Day'`, `description: 'One LLM-synthesized story, refreshed every 3 hours.'`.
+- `app/layout.tsx` metadata: `title: 'The News of the Day'`, `description: 'One LLM-synthesized story, refreshed every 6 hours.'`.
 - `public/og.png` — 1200×630, title in Georgia on white.
 - `public/robots.txt` permitting indexing.
 - Final pass on `CLAUDE.md` "Still open" section — convert resolved items to decisions.
@@ -458,9 +467,9 @@ Available model IDs: <https://tokenfactory.nebius.com/models>.
 ## End-to-end verification (after Step 9)
 
 The project is "done" when:
-- The Vercel production URL renders a real (cron-generated) news entry, not a fixture.
-- Vercel dashboard shows ≥3 successive cron runs at `0 */3` UTC with 200 responses.
-- Triggering `/api/refresh` manually with the bearer header overwrites Redis, and the page reflects the new entry within one reload.
-- A simulated failure (e.g. temporarily revoking the Tavily key and hitting refresh) returns 503 and the page still serves the previous good entry.
-- Stale warning appears when `generatedAt` is back-dated past 210 min.
-- The RFC's success criteria (live URL, ≥3 sources per visit, stale warning works, 7 consecutive cron days) are all met.
+- The Vercel production URL renders a real (refresh-generated) news entry, not a fixture.
+- GitHub Actions shows ≥3 successive scheduled runs at `0 */6` UTC, all green.
+- Triggering `/api/refresh` manually with the Bearer header overwrites Redis, and the page reflects the new entry within one reload.
+- A simulated failure (e.g. temporarily revoking the Tavily key and running the refresh) records `news:lastRun.status = "error"` (and a red GH job / 503 from the route) while the page still serves the previous good entry.
+- Stale warning appears when `generatedAt` is back-dated past 390 min.
+- The RFC's success criteria (live URL, ≥3 sources per visit, stale warning works, 7 consecutive scheduled-refresh days) are all met.

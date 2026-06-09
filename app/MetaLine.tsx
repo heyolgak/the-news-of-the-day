@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { useHydrated } from "./useHydrated";
 
-const STALE_THRESHOLD_MIN = 210;
+// 6h refresh cadence (GitHub Actions) + 30 min slack.
+const STALE_THRESHOLD_MIN = 390;
 
 /**
  * Renders "Generated at {local timestamp}" plus, when the entry is older than
- * 210 minutes, a stale notice in Editorial Yellow. Both depend on the user's
- * clock/TZ, so the raw timestamp is shown until hydration, then reformatted.
+ * STALE_THRESHOLD_MIN, a stale notice in Editorial Yellow. Both depend on the
+ * user's clock/TZ, so the raw timestamp is shown until hydration, then
+ * reformatted.
  */
 export default function MetaLine({ generatedAt }: { generatedAt: string }) {
   const hydrated = useHydrated();
