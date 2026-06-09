@@ -1,6 +1,6 @@
 import { crawlSources } from './tavily';
 import { synthesizeNews } from './nebius';
-import { setLatestNews } from './kv';
+import { setLatestNews, setLastRun } from './kv';
 import type { NewsEntry } from './types';
 
 export type RefreshReason =
@@ -16,7 +16,8 @@ export type RefreshResult =
 /**
  * The full refresh pipeline — crawl → synthesize → write KV — shared by the
  * scheduled GitHub Actions script (`scripts/refresh.ts`). Never overwrites
- * `news:latest` on failure (the previous good entry stays).
+ * `news:latest` on failure (the previous good entry stays). Records the
+ * outcome to `news:lastRun` either way (dead-man's-switch).
  */
 export async function runRefresh(): Promise<RefreshResult> {
   const t0 = Date.now();
@@ -26,13 +27,13 @@ export async function runRefresh(): Promise<RefreshResult> {
     articles = await crawlSources();
   } catch (err) {
     console.error('[refresh] crawl failed', err);
-    return { ok: false, reason: 'crawl_failed', error: err };
+    return fail('crawl_failed', err);
   }
   console.log(`[refresh] crawled ${articles.length} articles`);
 
   if (articles.length < 3) {
     console.warn(`[refresh] too few articles (${articles.length}), aborting`);
-    return { ok: false, reason: 'too_few_articles' };
+    return fail('too_few_articles');
   }
 
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -42,17 +43,36 @@ export async function runRefresh(): Promise<RefreshResult> {
     entry = await synthesizeNews(articles, todayIso);
   } catch (err) {
     console.error('[refresh] synthesis failed', err);
-    return { ok: false, reason: 'synthesis_failed', error: err };
+    return fail('synthesis_failed', err);
   }
 
   try {
     await setLatestNews(entry);
   } catch (err) {
     console.error('[refresh] KV write failed', err);
-    return { ok: false, reason: 'kv_write_failed', error: err };
+    return fail('kv_write_failed', err);
   }
 
   const durationMs = Date.now() - t0;
   console.log(`[refresh] wrote KV in ${durationMs}ms total`);
+  await recordLastRun('ok');
   return { ok: true, entry, durationMs };
+}
+
+async function fail(reason: RefreshReason, error?: unknown): Promise<RefreshResult> {
+  await recordLastRun('error', `${reason}${error ? `: ${errMessage(error)}` : ''}`);
+  return { ok: false, reason, error };
+}
+
+/** Best-effort: a lastRun write must never mask the real refresh outcome. */
+async function recordLastRun(status: 'ok' | 'error', detail?: string): Promise<void> {
+  try {
+    await setLastRun(status, detail);
+  } catch (err) {
+    console.error('[refresh] failed to write lastRun', err);
+  }
+}
+
+function errMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
