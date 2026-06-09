@@ -1,0 +1,33 @@
+name: Refresh news
+
+# Scheduled refresh pipeline (crawl → synthesize → write Upstash KV), offloaded
+# off Vercel so it isn't bound by the Hobby cron-tier (daily-only) or the 60s
+# function ceiling. Every 6h fits the Tavily free tier (~960 searches/month).
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+# A late run is fine; overlapping runs would double-write KV, so serialize.
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run refresh
+        env:
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
+          NEBIUS_MODEL: ${{ secrets.NEBIUS_MODEL }}
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
