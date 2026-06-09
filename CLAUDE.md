@@ -61,9 +61,9 @@ No user accounts, no archive page, no comments, no multi-story feed, no mobile a
 - Sibling design mockups: `~/Desktop/Vibecoding/the-news-of-the-day-screens/` (the `news-app-tools.md` there is the original tooling brief)
 - GitHub: `heyolgak/the-news-of-the-day` (public)
 
-## Still open
+## Capacity note
 
-**Tavily quota fit** is now addressed by the 6h cadence (~960 searches/mo within the ~1,000 free tier) — but confirm the account's actual plan limit in the Tavily dashboard before relying on it long-term. If the limit differs, adjust the cron interval in `.github/workflows/refresh.yml` and `STALE_THRESHOLD_MIN` in `app/MetaLine.tsx` together.
+**Tavily quota.** The plan limit is **confirmed at 1,000 searches/mo**, so the 6h cadence (8 sources × 4 runs/day ≈ 960/mo) is the ceiling — 3h (~1,920/mo) would overrun it. If the plan ever changes, adjust the cron interval in `.github/workflows/refresh.yml` and `STALE_THRESHOLD_MIN` in `app/MetaLine.tsx` together.
 
 ## Working style
 
