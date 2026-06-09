@@ -9,7 +9,7 @@ A one-page website that shows a single LLM-synthesized "news of the day" with th
 ## Architecture (at a glance)
 
 - **Next.js** (TypeScript + Tailwind, App Router) deployed on **Vercel** — but Vercel hosts only the **read side** (the page + `/api/latest`).
-- **The refresh is offloaded to GitHub Actions.** A scheduled workflow (`.github/workflows/refresh.yml`, every 6h) runs `scripts/refresh.ts` → `lib/refresh.ts#runRefresh()` → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (key `news:latest`). This sidesteps the Vercel-Hobby walls (daily-only cron + 60s function ceiling) entirely. See [STEP-8-PLAN.md](STEP-8-PLAN.md) for the why.
+- **The refresh is offloaded to GitHub Actions.** A scheduled workflow (`.github/workflows/refresh.yml`, every 6h) runs `scripts/refresh.ts` → `lib/refresh.ts#runRefresh()` → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (key `news:latest`). This sidesteps the Vercel-Hobby walls (daily-only cron + 60s function ceiling) entirely — synthesis with the default reasoning model measured ~85s (a non-reasoning model like Kimi ~27s), so it never fit the 60s ceiling regardless of the cron tier.
 - **`/api/refresh`** runs the same `runRefresh()` pipeline but is now a **manual/backup** trigger only (Bearer-auth, `maxDuration = 60`); it's no longer the scheduled path.
 - The page (`app/page.tsx`) is a **server component** that reads KV directly via `lib/kv.ts` (`getLatestNews()`) — it does **not** call `/api/latest`.
 - **`/api/latest`** is an auxiliary public JSON endpoint that also reads KV; it's not consumed by the page.
@@ -49,6 +49,11 @@ Type naming convention: all data types use the `News*` prefix.
 ## Out of scope (v1)
 
 No user accounts, no archive page, no comments, no multi-story feed, no mobile app, no real-time push, no human-in-the-loop editorial step.
+
+## Known limitations
+
+- **Source title drift.** `source.title`/`outlet` are snapshotted from our own crawl by URL (the model only picks URLs), so they can't mismatch *our* data — but if an outlet re-headlines the article at that live URL after we crawl it, the stored title goes stale. Fixing that would need a display-time re-fetch (out of scope).
+- **Occasional non-JSON from the model.** The synthesis model has been observed returning non-JSON; the pipeline aborts that run and keeps the previous `news:latest` (per the LLM-rules above). We deliberately did **not** add JSON-parse hardening or a parse-level re-call — an aborted run is acceptable at a 6h cadence.
 
 ## Repo / paths
 

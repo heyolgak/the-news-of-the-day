@@ -342,8 +342,9 @@ granularity *and* functions at 60s — both of which would force concessions (da
 26h stale window, fighting the ceiling on every run). Since the pipeline is just
 "crawl → synthesize → write one KV key" and the libs are framework-agnostic, the refresh is
 **offloaded to a scheduled GitHub Actions workflow** instead. This sidesteps both walls: an
-arbitrary-interval cron and a multi-hour runtime. See [STEP-8-PLAN.md](STEP-8-PLAN.md) for the
-full analysis. The repo lives on GitHub already.
+arbitrary-interval cron and a multi-hour runtime. (Synthesis with the default reasoning model
+measured ~85s — over the old 60s ceiling — so it never fit on Vercel regardless of the cron
+tier.) The repo lives on GitHub already.
 
 **Goal:** a GitHub Actions workflow runs the refresh every 6 hours; `/api/refresh` survives
 as a Bearer-authed manual/backup trigger running the same pipeline.
