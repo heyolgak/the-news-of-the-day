@@ -121,7 +121,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 7. Bloomberg — `bloomberg.com/uk`
 8. The Wall Street Journal — `wsj.com` _(hard paywall, may yield headlines only)_
 
-### LLM prompt sketch
+### LLM prompt
 
 **System prompt** You are a wire-service editor. Given the articles below, identify the single most important story of the day and write one headline (≤12 words) and one dek (≤30 words, one sentence). Use only facts present in the provided articles — do not infer, speculate, or add context not in the sources. If sources disagree on a fact, omit it. Paraphrase rather than quote — no verbatim passages over ~15 words from any single source. Pick a tone that is calm and neutral (Reuters/AP style), not opinionated. Choose between 3 and 6 sources for the `sources` array, preferring ones that independently confirm the story. If a usable image URL appears in the source articles, include it as `imageUrl`. Return a JSON object matching the `NewsEntry` schema — nothing else, no prose around it.
 
@@ -141,14 +141,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 ## Implementation plan
 
-Executed as 7 small coding PRs, one no-code provisioning step (Step 2), and one design/docs step (Step 6), each merged to `main` independently so every PR gets its own Vercel preview deploy. Each PR is reviewable in under 15 minutes.
-
 Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, GitHub Actions) is done **locally before the step that uses it**, with throwaway scripts that are never committed.
-
-Decisions deferred until the step that needs them:
-- Specific Nebius model — Step 5.
-- Cold-start UI copy — Step 6 (Design).
-- Duplicate-headline policy — Step 9 (default: overwrite-always).
 
 ---
 

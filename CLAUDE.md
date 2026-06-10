@@ -43,8 +43,8 @@ Type naming convention: all data types use the `News*` prefix.
 
 ## Configuration
 
-- **`NEBIUS_MODEL`** (optional env var) — Nebius model ID used for synthesis. Default in code: `Qwen/Qwen3.5-397B-A17B-fast` (a reasoning model — viable since the refresh runs off the 60s Vercel ceiling). Override in `.env.local` (local), the GitHub Actions secrets (scheduled refresh), or Vercel → Settings → Environment Variables (the manual/backup route). Available IDs: <https://tokenfactory.nebius.com/models>.
-- **Secrets live in two places.** The scheduled refresh reads `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` (+ optional `NEBIUS_MODEL`) from **GitHub Actions secrets**; the Vercel app reads the same KV vars (+ `CRON_SECRET` for the backup route) from **Vercel env vars**.
+- **`NEBIUS_MODEL`** (optional env var) — Nebius model ID used for synthesis. Default in code: `Qwen/Qwen3.5-397B-A17B-fast` (a reasoning model — viable since the refresh runs off the 60s Vercel ceiling). Override in `.env.local` (local), as a GitHub Actions **repository variable** `vars.NEBIUS_MODEL` (scheduled refresh — it's a non-sensitive model ID, so a variable, not a secret), or Vercel → Settings → Environment Variables (the manual/backup route). Available IDs: <https://tokenfactory.nebius.com/models>.
+- **Secrets live in two places.** The scheduled refresh reads `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` from **GitHub Actions secrets** (plus the optional **variable** `NEBIUS_MODEL` — a non-sensitive model ID, so a repository variable rather than a secret); the Vercel app reads the same KV vars (+ `CRON_SECRET` for the backup route) from **Vercel env vars**.
 
 ## Out of scope (v1)
 
