@@ -28,7 +28,7 @@ jobs:
         env:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
-          # Intentionally undefined by default — empty resolves to the code default in lib/nebius.ts.
+          # Optional model override via repo variable; falls back to the code default in lib/nebius.ts if unset.
           NEBIUS_MODEL: ${{ vars.NEBIUS_MODEL }}
           KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
           KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}

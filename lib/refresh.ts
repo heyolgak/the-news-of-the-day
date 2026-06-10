@@ -1,5 +1,5 @@
 import { crawlSources } from './tavily';
-import { synthesizeNews } from './nebius';
+import { synthesizeNews, MODEL } from './nebius';
 import { setLatestNews, setLastRun } from './kv';
 import type { NewsEntry } from './types';
 
@@ -38,6 +38,7 @@ export async function runRefresh(): Promise<RefreshResult> {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
+  console.log(`[refresh] synthesizing with model ${MODEL}`);
   let entry: NewsEntry;
   try {
     entry = await synthesizeNews(articles, todayIso);
@@ -54,7 +55,7 @@ export async function runRefresh(): Promise<RefreshResult> {
   }
 
   const durationMs = Date.now() - t0;
-  console.log(`[refresh] wrote KV in ${durationMs}ms total`);
+  console.log(`[refresh] wrote KV in ${durationMs}ms total (model ${MODEL})`);
   await recordLastRun('ok');
   return { ok: true, entry, durationMs };
 }

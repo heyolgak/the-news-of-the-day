@@ -6,7 +6,8 @@ import type { NewsEntry, NewsSource } from './types';
 const DEFAULT_MODEL = 'Qwen/Qwen3.5-397B-A17B-fast';
 // `||` not `??`: GitHub Actions injects an unset secret as an empty string,
 // and "" should fall back to the default (which `??` would not do).
-const MODEL = process.env.NEBIUS_MODEL || DEFAULT_MODEL;
+// Exported so the refresh pipeline can log which model actually ran.
+export const MODEL = process.env.NEBIUS_MODEL || DEFAULT_MODEL;
 const NEBIUS_ENDPOINT = 'https://api.studio.nebius.com/v1/chat/completions';
 
 const SYSTEM_PROMPT = `You are a wire-service editor. Given the articles below, identify the single most important story of the day and write one headline (≤12 words) and one dek (≤30 words, one sentence).
