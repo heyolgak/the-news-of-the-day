@@ -125,7 +125,7 @@ The cron lives in GitHub Actions, not Vercel. To verify it:
 3. `curl -s https://<deployment>/api/latest | jq .news.headline` reflects the new story; reload the live page to confirm.
 4. **Failure signal:** with a deliberately broken secret the job goes **red** and `news:lastRun` records `status: "error"` — the page keeps serving the previous good entry.
 
-Secrets must be set under **Settings → Secrets and variables → Actions**: `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` (+ optional `NEBIUS_MODEL`).
+Secrets must be set under **Settings → Secrets and variables → Actions** (Secrets tab): `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`. The optional `NEBIUS_MODEL` is a non-sensitive model ID, so it goes on the **Variables** tab of the same page (not Secrets).
 
 ---
 
