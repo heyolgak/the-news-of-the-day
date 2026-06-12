@@ -2,6 +2,14 @@
 
 The News of the Day is a one-page website that surfaces a single, LLM-synthesized "news of the day" with links to the sources it was built from, refreshed every 6 hours.
 
+**Live:** [the-news-of-the-day.vercel.app](https://the-news-of-the-day.vercel.app/)
+
+<p align="center">
+  <img src="screenshots/screenshot-headline.png" alt="The headline and image view" width="320">
+  &nbsp;&nbsp;
+  <img src="screenshots/screenshot-sources.png" alt="The sources list view" width="320">
+</p>
+
 ## Problem & goal
 
 Following the daily news through dozens of outlets is noisy and time-consuming, yet most days have one story that actually matters. 
