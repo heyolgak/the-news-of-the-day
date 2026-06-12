@@ -283,13 +283,13 @@ We don't have a finished comp — only the style rules in `DESIGN.md` and a stru
 
 **Decided** (recorded in `DESIGN.md` → Page Structure (v1) + Typography, which are the source of truth):
 - Single-story layout, top → bottom: masthead wordmark → date block → lead image card → headline → dek → meta line → `SOURCES` → source list → footer.
-- **Georgia** as the serif. **Helvetica Neue** (Arial fallback) as the sans.
+- **Playfair Display** as the serif (loaded via `next/font/google`, Georgia fallback). **Helvetica Neue** (Arial fallback) as the sans.
 - **Dek** set in Helvetica Neue (sans), not the serif.
 - The reference's byline slot under the dek is **reused** as a **meta line** showing **"Generated at {generatedAt}"**, which also carries the stale notice when the entry is old.
 - **Image credit** kept as a **TBD** placeholder (no field in the contract — rendered around, not faked).
 - **Sources** rendered as **"By {outlet}"** with the outlet linked (the contract has no author names).
 - **Stale notice** styled per `DESIGN.md` (Editorial Yellow accent).
-- **Cold-start copy** confirmed: centered "First refresh pending — check back shortly" in Georgia, no image, no sources.
+- **Cold-start copy** confirmed: centered "First refresh pending — check back shortly" in Playfair Display, no image, no sources.
 - `DESIGN.md` trimmed to only the tokens/components this single-page app uses.
 
 **Verification:**
@@ -300,27 +300,27 @@ We don't have a finished comp — only the style rules in `DESIGN.md` and a stru
 
 ### Step 7 — Frontend rendering
 
-Cold-start copy was decided in Step 6: centered "First refresh pending — check back shortly" in Georgia, no image, no sources block.
+Cold-start copy was decided in Step 6: centered "First refresh pending — check back shortly" in Playfair Display, no image, no sources block.
 
 **Goal:** The single page matches `DESIGN.md` → Page Structure (v1) and reads KV server-side via `lib/kv.ts` (the browser never touches KV directly).
 
 **Changes:**
 - Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
-- Fonts: Georgia (serif) and Helvetica Neue (Arial fallback) via CSS font stacks — both are system/fallback faces, so no `next/font` or webfont loading is needed.
+- Fonts: the serif (**Playfair Display**) loads via `next/font/google` (self-hosted at build, exposed as `--font-serif-web`, Georgia kept as fallback); Helvetica Neue (Arial fallback) stays a system stack.
 - `app/page.tsx` (server component): read the latest entry at request time (`dynamic = 'force-dynamic'`) and render the structure from `DESIGN.md`:
-  - **Masthead** — centered "The News of the Day" wordmark (Georgia); hairline rule below.
-  - **Date block** — hairline, centered date `<h1>` (Georgia) formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ, hairline.
+  - **Masthead** — centered "The News of the Day" wordmark (Playfair Display); hairline rule below.
+  - **Date block** — hairline, centered date `<h1>` (Playfair Display) formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ, hairline.
   - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding); bottom-right credit overlay is TBD. Not a link. Skip the block if absent.
-  - **Headline** — Georgia 700, 40px display, tracking −0.8px.
+  - **Headline** — Playfair Display 700, 40px display, tracking −0.8px.
   - **Dek** — Helvetica Neue, ~18–20px.
   - **Meta line** — Helvetica Neue caption: "Generated at {generatedAt}"; when `generatedAt` is older than 390 min, also render the stale notice "last updated X minutes ago" (computed client-side, styled per `DESIGN.md`).
-  - **Sources list** — hairline-separated rows: source title (Georgia) linked to `url`, then "By {outlet}" with the outlet linked, `target=_blank rel=noopener`.
+  - **Sources list** — hairline-separated rows: source title (Playfair Display) linked to `url`, then "By {outlet}" with the outlet linked, `target=_blank rel=noopener`.
   - **Footer** — Helvetica Neue caption: "© {year} The News of the Day".
-- Cold-start path: render the centered Georgia message only; no image, no sources.
+- Cold-start path: render the centered Playfair Display message only; no image, no sources.
 - Max width 1296px; narrow reading column (~640px) centered. Single-column always.
 
 **Verification:**
-- With Redis populated: page matches `DESIGN.md` → Page Structure (v1) — masthead, date block, meta line, "By {outlet}" sources, Georgia headlines.
+- With Redis populated: page matches `DESIGN.md` → Page Structure (v1) — masthead, date block, meta line, "By {outlet}" sources, Playfair Display headlines.
 - Clear Redis: page shows cold-start copy.
 - Back-date `generatedAt` past 390 min: stale notice appears in the meta line.
 - Lighthouse mobile + desktop pass on Performance + Accessibility.
