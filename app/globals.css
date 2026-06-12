@@ -9,7 +9,7 @@
   --color-editorial-yellow: #ffc500;
 
   /* Typography — Families */
-  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-serif: var(--font-serif-web), Georgia, 'Times New Roman', serif;
   --font-sans: 'Helvetica Neue', Arial, sans-serif;
 
   /* Typography — Scale */
