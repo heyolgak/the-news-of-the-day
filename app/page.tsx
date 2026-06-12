@@ -91,7 +91,7 @@ export default async function Home() {
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-serif text-subheading font-bold leading-subheading tracking-subheading text-printers-black hover:underline lg:text-[28px]"
+                  className="font-serif text-subheading font-bold leading-subheading tracking-subheading text-printers-black hover:underline lg:text-[22px]"
                 >
                   {source.title}
                 </a>
