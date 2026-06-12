@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import { Vidaloka } from "next/font/google";
+import { Playfair_Display } from "next/font/google";
 import "./globals.css";
 
-const serifWeb = Vidaloka({
+const serifWeb = Playfair_Display({
   subsets: ["latin"],
-  weight: "400",
   variable: "--font-serif-web",
   display: "swap",
 });
