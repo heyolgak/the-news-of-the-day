@@ -18,9 +18,10 @@ This design evokes a classic, authoritative editorial feel, grounded in high-con
 ## Tokens — Typography
 
 
-### Georgia — Primary content: masthead wordmark, date header, headline, source titles, cold-start message. · `--font-serif`
-- **Stack:** `Georgia, 'Times New Roman', serif`
-- **Weights:** 400, 700
+### Playfair Display — Primary content: masthead wordmark, date header, headline, source titles, cold-start message. · `--font-serif`
+- **Loaded via** `next/font/google` (self-hosted at build, no runtime request) exposing `--font-serif-web`; see `app/layout.tsx`.
+- **Stack:** `var(--font-serif-web), Georgia, 'Times New Roman', serif` — Georgia is the pre-swap / fallback face.
+- **Weights:** 400, 700 — Playfair Display is a variable font, so 700 is a true bold (no synthesized weight).
 - **Sizes:** 13px, 16px, 18px, 20px, 24px, 28px, 32px, 34px, 40px
 - **Line height:** 1.00, 1.13, 1.15, 1.20, 1.25, 1.30, 1.38, 1.44, 1.50
 - **Letter spacing:** -0.0200em, 0.0100em, 0.0500em, 0.0750em
@@ -109,22 +110,22 @@ The page renders a `NewsEntry` (`{ date, news, sources }`). Gaps are rendered ar
 
 ### Typography
 
-Serif = **Georgia**; Sans = **Helvetica Neue**. Colors: black `#000`, Sterling Gray `#6e6e6e`, hairlines Zinc Gray `#d9d9d9`. Stale notice uses **Editorial Yellow `#ffc500`**.
+Serif = **Playfair Display** (Georgia fallback); Sans = **Helvetica Neue**. Colors: black `#000`, Sterling Gray `#6e6e6e`, hairlines Zinc Gray `#d9d9d9`. Stale notice uses **Editorial Yellow `#ffc500`**.
 
 | Element | Font | Size | Style |
 |---------|------|------|-------|
-| Masthead wordmark | Georgia | 24–28px | 700, tight tracking, black, centered |
-| Date header | Georgia | heading/display (32–40px) | 700, black, centered |
-| Headline | Georgia | 40px (`--text-display`) | 700, tracking −0.8px, lh 1.13, black |
+| Masthead wordmark | Playfair Display | 24–28px | 700, tight tracking, black, centered |
+| Date header | Playfair Display | heading/display (32–40px) | 700, black, centered |
+| Headline | Playfair Display | 40px (`--text-display`) | 700, tracking −0.8px, lh 1.13, black |
 | Dek | Helvetica Neue | 18–20px | 400, lh ~1.3, black |
 | Meta line ("Generated at …") | Helvetica Neue | 13–14px (caption) | 400, Sterling Gray |
 | Stale notice | Helvetica Neue | 13–14px | 700, Editorial Yellow accent |
 | Image credit (TBD) | Helvetica Neue | 13px | 400, Sterling Gray, overlay bottom-right |
 | SOURCES label | Helvetica Neue | 13–14px | 700, uppercase, tracked, black |
-| Source title | Georgia | 24px (`--text-subheading`) | 700, tracking −0.48px, black; linked |
+| Source title | Playfair Display | 24px (`--text-subheading`) | 700, tracking −0.48px, black; linked |
 | Source byline "By {outlet}" | Helvetica Neue | 13–14px | 400, Sterling Gray; outlet black, underline-on-hover |
 | Footer | Helvetica Neue | 13px (caption) | 400, Sterling Gray, centered |
-| Cold-start message | Georgia | heading | 400, black, centered |
+| Cold-start message | Playfair Display | heading | 400, black, centered |
 
 ## Components
 
@@ -137,7 +138,7 @@ Background Canvas White (`#ffffff`), 8px border-radius, no box shadow. Internal 
 ## Do's and Don'ts
 
 ### Do
-- Use Georgia for the masthead, date, headline, source titles, and cold-start copy to carry the editorial voice.
+- Use Playfair Display (the serif) for the masthead, date, headline, source titles, and cold-start copy to carry the editorial voice.
 - Use Printer's Black (`#000000`) on Canvas White (`#ffffff`) for primary text.
 - Apply 8px border-radius to the content card.
 - Maintain tight letter-spacing on headlines (−0.8px at 40px display, −0.48px at 24px subheading).
@@ -163,7 +164,8 @@ Background Canvas White (`#ffffff`), 8px border-radius, no box shadow. Internal 
   --color-editorial-yellow: #ffc500;
 
   /* Typography — Families */
-  --font-serif: Georgia, 'Times New Roman', serif;
+  /* --font-serif-web is registered by next/font/google in app/layout.tsx (Playfair Display). */
+  --font-serif: var(--font-serif-web), Georgia, 'Times New Roman', serif;
   --font-sans: 'Helvetica Neue', Arial, sans-serif;
 
   /* Typography — Scale */
