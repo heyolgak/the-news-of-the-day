@@ -4,8 +4,20 @@ import MetaLine from "./MetaLine";
 
 export const dynamic = "force-dynamic";
 
-function Hairline() {
-  return <div className="h-px bg-zinc-gray" />;
+function Hairline({
+  tone = "light",
+  bleed = false,
+}: {
+  tone?: "light" | "medium";
+  bleed?: boolean;
+}) {
+  return (
+    <div
+      className={`h-px ${tone === "medium" ? "bg-sterling-gray" : "bg-zinc-gray"}${
+        bleed ? " -mx-6 lg:mx-0" : ""
+      }`}
+    />
+  );
 }
 
 export default async function Home() {
@@ -26,25 +38,25 @@ export default async function Home() {
   const year = new Date().getFullYear();
 
   return (
-    <main className="mx-auto w-full max-w-[1296px] px-6 py-12">
-      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-8 lg:max-w-none">
+    <main className="mx-auto w-full max-w-[1296px] px-6 py-16">
+      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-20 lg:max-w-none">
         {/* 1. Masthead */}
-        <header>
-          <p className="text-center font-serif text-[26px] font-bold tracking-[-0.02em] text-printers-black">
+        <header className="relative flex h-[40px] items-center justify-center">
+          <p className="-translate-y-[3px] text-center font-serif text-[22px] font-bold tracking-[-0.02em] text-printers-black">
             The News of the Day
           </p>
-          <div className="mt-4">
-            <Hairline />
+          <div className="absolute inset-x-0 bottom-0">
+            <Hairline bleed />
           </div>
         </header>
 
         {/* 2. Date block */}
         <section>
-          <Hairline />
-          <h1 className="py-4 text-center font-serif text-heading font-bold text-printers-black">
+          <Hairline tone="medium" />
+          <h1 className="py-12 text-center font-serif text-heading font-bold text-printers-black">
             <ClientDate iso={date.date} />
           </h1>
-          <Hairline />
+          <Hairline tone="medium" />
         </section>
 
         {/* 3–6. Lead story — image left / text right on desktop, stacked on mobile */}
@@ -62,12 +74,12 @@ export default async function Home() {
           {/* Headline + dek + meta */}
           <div className="flex flex-col gap-4">
             {/* Headline — not a link */}
-            <h2 className="font-serif text-display font-bold leading-display tracking-display text-printers-black">
+            <h2 className="font-serif text-[32px] lg:text-display font-bold leading-display tracking-display text-printers-black">
               {news.headline}
             </h2>
 
             {/* Dek */}
-            <p className="font-sans text-[19px] leading-[1.35] text-printers-black">
+            <p className="font-sans text-[16px] lg:text-[19px] leading-[1.35] text-printers-black">
               {news.dek}
             </p>
 
@@ -78,24 +90,24 @@ export default async function Home() {
 
         {/* 7 + 8. Sources */}
         <section>
-          <h3 className="font-sans text-caption font-bold uppercase tracking-[0.05em] text-printers-black">
+          <h3 className="font-sans text-[18px] lg:text-caption font-bold uppercase tracking-[0.05em] text-printers-black">
             Sources
           </h3>
           <ul className="mt-4 lg:grid lg:grid-cols-4 lg:gap-x-8 lg:gap-y-8 lg:border-t lg:border-zinc-gray lg:pt-6">
             {sources.map((source, i) => (
               <li
                 key={`${source.url}-${i}`}
-                className="border-t border-zinc-gray py-4 lg:border-t-0 lg:py-0"
+                className="border-t border-zinc-gray py-8 lg:border-t-0 lg:py-0"
               >
                 <a
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-serif text-subheading font-bold leading-subheading tracking-subheading text-printers-black hover:underline lg:text-[22px]"
+                  className="font-serif text-[22px] font-bold leading-subheading tracking-subheading text-printers-black hover:underline"
                 >
                   {source.title}
                 </a>
-                <p className="mt-1 font-sans text-caption text-sterling-gray">
+                <p className="mt-1 font-sans text-[14px] lg:text-caption text-sterling-gray">
                   By{" "}
                   <a
                     href={source.url}

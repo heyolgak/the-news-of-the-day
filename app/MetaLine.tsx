@@ -35,7 +35,7 @@ export default function MetaLine({ generatedAt }: { generatedAt: string }) {
   return (
     <p
       suppressHydrationWarning
-      className="font-sans text-caption text-sterling-gray"
+      className="font-sans text-[14px] lg:text-caption text-sterling-gray"
     >
       Generated at {label}
       {staleMinutes !== null && (
