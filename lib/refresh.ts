@@ -1,5 +1,6 @@
 import { crawlSources } from './tavily';
 import { synthesizeNews, MODEL } from './nebius';
+import { resolveHeadlines } from './headlines';
 import { setLatestNews, setLastRun } from './kv';
 import type { NewsEntry } from './types';
 
@@ -46,6 +47,10 @@ export async function runRefresh(): Promise<RefreshResult> {
     console.error('[refresh] synthesis failed', err);
     return fail('synthesis_failed', err);
   }
+
+  // Re-resolve each chosen source's headline from its own og:title (Tavily
+  // hands us the SEO <title>, brand suffix and all). Best-effort: never throws.
+  entry = { ...entry, sources: await resolveHeadlines(entry.sources) };
 
   try {
     await setLatestNews(entry);
