@@ -5,9 +5,9 @@ The News of the Day is a one-page website that surfaces a single, LLM-synthesize
 **Live:** [the-news-of-the-day.vercel.app](https://the-news-of-the-day.vercel.app/)
 
 <p align="center">
-  <img src="screenshots/screenshot-headline.png" alt="The headline and image view" width="320">
+  <img src="screenshots/screenshot-headline-1.png" alt="The headline and image view" width="320">
   &nbsp;&nbsp;
-  <img src="screenshots/screenshot-sources.png" alt="The sources list view" width="320">
+  <img src="screenshots/screenshot-sources-2.png" alt="The sources list view" width="320">
 </p>
 
 ## Problem & goal
