@@ -37,6 +37,7 @@ sequenceDiagram
   participant R as runRefresh() pipeline
   participant T as Tavily
   participant N as Nebius
+  participant H as Source pages (og:title)
   participant KV as Upstash Redis
   participant V as Visitor
   participant P as Vercel page (server)
@@ -47,7 +48,9 @@ sequenceDiagram
   R->>T: crawl sources
   T-->>R: articles
   R->>N: send articles + prompt
-  N-->>R: synthesized news
+  N-->>R: synthesized news (chosen source URLs)
+  R->>H: GET chosen source URLs (best-effort)
+  H-->>R: og:title per reachable source (de-branded headline)
   R->>KV: store news:latest (+ news:lastRun)
   KV-->>R: ok
   R-->>C: exit 0 (non-zero on failure → job red)
@@ -102,7 +105,7 @@ type NewsBody = {
 };
 
 type NewsSource = {
-  title: string;           // article title as the source published it
+  title: string;           // the source's own og:title (de-branded) where reachable, else the Tavily title; read at refresh
   outlet: string;          // e.g. "New York Times", "BBC"
   url: string;
 };
@@ -127,7 +130,13 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 **User prompt** Each Tavily article is passed as `{ outlet, title, url, publishedAt, body }` in a JSON array. Today's date (ISO, e.g. "2026-05-21") is provided alongside as a string.
 
-**Failure modes.** If fewer than 3 articles are returned by Tavily, the refresh aborts and KV is not overwritten. If the LLM returns invalid JSON or fewer than 3 sources, the refresh aborts. The previous `news:latest` stays in place until the next successful run.
+**Failure modes.** If fewer than 3 articles are returned by Tavily, the refresh aborts and KV is not overwritten. If the LLM returns invalid JSON or fewer than 3 sources, the refresh aborts. The previous `news:latest` stays in place until the next successful run. The post-synthesis headline resolution (`lib/headlines.ts`) is the one **best-effort** step: a blocked/failed source fetch or a missing `og:title` falls back to the suffix-stripped Tavily title and never aborts the run.
+
+### Source title resolution
+
+Tavily returns each article's HTML `<title>` — the SEO/social string, which carries the outlet brand suffix (`… - BBC`) and often differs from the visible article headline. After synthesis, `lib/headlines.ts#resolveHeadlines()` does a plain HTTP GET of just the chosen 3–6 source URLs (no Tavily quota cost — deliberately **not** Tavily Extract, which would overrun the ~1,000/mo free tier) and re-reads the headline from each source's own `og:title` (→ `twitter:title`), de-branded. Titles stay snapshotted from the source, never authored by the model (per the OQ2 decision).
+
+This is a **hybrid**: many outlets block automated server-side requests (measured: BBC / The Guardian / Al Jazeera reachable; Reuters `401`, NYT / Bloomberg `403`, WSJ `401`, AP likely too — a bot-block issue, not paywall-specific). A blocked source falls back to the suffix-stripped Tavily title, which fixes the brand suffix everywhere but may differ in wording from the live headline. There is deliberately no `<title>` fallback: a bot-block stub served with HTTP `200` can carry a junk `<title>` (e.g. `nytimes.com`), so we return null and let the Tavily fallback win. The measured status codes are from a dev IP; the scheduled GitHub Action runs from different IPs, so the reachable set there may differ.
 
 ### Observability
 

@@ -22,7 +22,11 @@ A secondary goal is hands-on practice with Vercel, Tavily, Nebius, and Upstash R
 
 **Next.js** (App Router, TypeScript + Tailwind) on **Vercel** for the read side.
 
-Every 6h a scheduled **GitHub Actions** workflow runs the refresh pipeline → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **Upstash Redis** (`news:latest`). The Vercel page reads Redis server-side and renders it; `/api/latest` serves the same JSON. `/api/refresh` is a manual/backup trigger running the same pipeline.
+Every 6h a scheduled **GitHub Actions** workflow runs the refresh pipeline 
+→ **Tavily** (crawl 8 sources)
+→ **Nebius** (LLM synthesis)
+→ **Headline resolution** (re-read each reachable source's `og:title` so titles match the live headline, not Tavily's SEO `<title>`) 
+→ **Upstash Redis** (`news:latest`). The Vercel page reads Redis server-side and renders it; `/api/latest` serves the same JSON. `/api/refresh` is a manual/backup trigger running the same pipeline.
 
 Full sequence diagram + data contract: [RFC.md](RFC.md).
 
