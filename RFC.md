@@ -282,7 +282,7 @@ Dashboard and password-manager work only — no commits, no branch.
 We don't have a finished comp — only the style rules in `DESIGN.md` and a structure reference. The screenshot is the source of truth for what's visible.
 
 **Decided** (recorded in `DESIGN.md` → Page Structure (v1) + Typography, which are the source of truth):
-- Single-story layout, top → bottom: masthead wordmark → date block → lead image card → headline → dek → meta line → `SOURCES` → source list → footer.
+- Single-story layout, top → bottom: masthead wordmark → date block → lead image → headline → dek → meta line → `SOURCES` → source list → footer. (v1 wrapped the image in a card; that card was dropped in the post-v1 FE refinement — see Step 7.)
 - **Playfair Display** as the serif (loaded via `next/font/google`, Georgia fallback). **Helvetica Neue** (Arial fallback) as the sans.
 - **Dek** set in Helvetica Neue (sans), not the serif.
 - The reference's byline slot under the dek is **reused** as a **meta line** showing **"Generated at {generatedAt}"**, which also carries the stale notice when the entry is old.
@@ -302,7 +302,9 @@ We don't have a finished comp — only the style rules in `DESIGN.md` and a stru
 
 Cold-start copy was decided in Step 6: centered "First refresh pending — check back shortly" in Playfair Display, no image, no sources block.
 
-**Goal:** The single page matches `DESIGN.md` → Page Structure (v1) and reads KV server-side via `lib/kv.ts` (the browser never touches KV directly).
+> **Post-v1 FE refinement.** The layout was later made **responsive**: single 640px column on mobile, opening into a 2-column lead grid (image left / text right) and a 4-column sources grid on desktop, with the image edge-to-edge (card dropped) and several per-breakpoint type sizes. The sizes/structure recorded in this step are the **original v1**; `DESIGN.md` holds the current spec.
+
+**Goal:** The single page matches `DESIGN.md` → Page Structure and reads KV server-side via `lib/kv.ts` (the browser never touches KV directly).
 
 **Changes:**
 - Tailwind v4 theme tokens — copy the `@theme` block from `DESIGN.md` into `app/globals.css`.
@@ -310,14 +312,14 @@ Cold-start copy was decided in Step 6: centered "First refresh pending — check
 - `app/page.tsx` (server component): read the latest entry at request time (`dynamic = 'force-dynamic'`) and render the structure from `DESIGN.md`:
   - **Masthead** — centered "The News of the Day" wordmark (Playfair Display); hairline rule below.
   - **Date block** — hairline, centered date `<h1>` (Playfair Display) formatted client-side from `entry.date.date` via `Intl.DateTimeFormat` in the user's TZ, hairline.
-  - **Image** (optional) — `entry.news.imageUrl` inside a content card (8px radius, 16px padding); bottom-right credit overlay is TBD. Not a link. Skip the block if absent.
+  - **Image** (optional) — `entry.news.imageUrl` rendered edge-to-edge (`w-full`, square); bottom-right credit overlay is TBD. Not a link. Skip the block if absent. _(v1 wrapped this in an 8px-radius / 16px-padding card; dropped in the post-v1 refinement.)_
   - **Headline** — Playfair Display 700, 40px display, tracking −0.8px.
   - **Dek** — Helvetica Neue, ~18–20px.
   - **Meta line** — Helvetica Neue caption: "Generated at {generatedAt}"; when `generatedAt` is older than 390 min, also render the stale notice "last updated X minutes ago" (computed client-side, styled per `DESIGN.md`).
   - **Sources list** — hairline-separated rows: source title (Playfair Display) linked to `url`, then "By {outlet}" with the outlet linked, `target=_blank rel=noopener`.
   - **Footer** — Helvetica Neue caption: "© {year} The News of the Day".
 - Cold-start path: render the centered Playfair Display message only; no image, no sources.
-- Max width 1296px; narrow reading column (~640px) centered. Single-column always.
+- Max width 1296px; narrow reading column (~640px) centered on mobile. (Post-v1: desktop un-caps the column into a 2-column lead grid + 4-column sources grid — see the refinement note above.)
 
 **Verification:**
 - With Redis populated: page matches `DESIGN.md` → Page Structure (v1) — masthead, date block, meta line, "By {outlet}" sources, Playfair Display headlines.
