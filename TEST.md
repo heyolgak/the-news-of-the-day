@@ -63,6 +63,7 @@ curl -X POST -H "Authorization: Bearer $SECRET" http://localhost:3000/api/refres
 - `news.imageUrl` — a real https URL.
 - `news.generatedAt` — current ISO timestamp.
 - `sources` — array of **3–6** entries, ideally from **different outlets** (BBC / Reuters / AP / NYT / WSJ etc.), all with `title` / `outlet` / `url`.
+- each `source.title` has **no** brand suffix (`- BBC`, `| Reuters`) — titles come from `og:title` resolution (`lib/headlines.ts`), not Tavily's raw `<title>`. Watch the `[headlines]` log line for how many resolved vs. fell back. Reachable outlets (BBC / Guardian / Al Jazeera) show their live headline; outlets that block our fetch (Reuters / NYT / WSJ / Bloomberg) fall back to the de-branded Tavily title, which may differ in wording from the live headline.
 
 ---
 
