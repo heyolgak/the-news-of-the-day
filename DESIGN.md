@@ -11,8 +11,8 @@ This design evokes a classic, authoritative editorial feel, grounded in high-con
 |------|-------|-------|------|
 | Canvas White | `#ffffff` | `--color-canvas-white` | Page background and card surfaces. |
 | Printer's Black | `#000000` | `--color-printers-black` | Primary text, headlines, hairline rules at full strength. |
-| Sterling Gray | `#6e6e6e` | `--color-sterling-gray` | Secondary text and metadata (meta line, bylines, footer). |
-| Zinc Gray | `#d9d9d9` | `--color-zinc-gray` | Hairline rules and dividers. |
+| Sterling Gray | `#6e6e6e` | `--color-sterling-gray` | Secondary text and metadata (meta line, bylines, footer); also the **medium** hairline tone (date-block rules). |
+| Zinc Gray | `#d9d9d9` | `--color-zinc-gray` | **Light** hairline rules and dividers (masthead rule, source dividers). |
 | Editorial Yellow | `#ffc500` | `--color-editorial-yellow` | Stale-notice accent.|
 
 ## Tokens — Typography
@@ -43,6 +43,8 @@ This design evokes a classic, authoritative editorial feel, grounded in high-con
 | heading | 32px | 1.15 | -0.64px | `--text-heading` |
 | display | 40px | 1.13 | -0.8px | `--text-display` |
 
+> **Responsive note.** Several elements step their size up at the `lg` breakpoint (see the Typography Map for each pair) — e.g. the headline is 32px on mobile → 40px (`display`) on desktop, the SOURCES label is 18px → 13px (`caption`). A few sizes are set as **hardcoded px outside the token set** (22px masthead & source title, 19px dek, 18px label, 14px caption-on-mobile); they don't map to a `--text-*` token.
+
 ## Tokens — Spacing & Shapes
 
 **Base unit:** 4px · **Density:** compact
@@ -70,26 +72,29 @@ This design evokes a classic, authoritative editorial feel, grounded in high-con
 
 ### Layout
 
-- **Page max-width:** 1296px
-- **Reading column:** capped narrow (~640px) and centered within the page
-- **Section gap:** 32px
-- **Card padding:** 16px
-- **Element gap:** 4px
+Responsive, with the `lg` breakpoint as the mobile→desktop switch:
 
-## Page Structure (v1)
+- **Page max-width:** 1296px (outer `<main>`).
+- **Reading column:** on mobile, content is a single ~640px column centered in the page; on **desktop (`lg`)** that cap is removed (`max-w-none`) so the lead and sources span the full width.
+- **Lead block:** stacked on mobile; on desktop a **2-column grid** — image left / text right (`grid-cols-[3fr_2fr]`, `gap-x-12`).
+- **Sources:** single-column list on mobile; **4-column grid** on desktop (`grid-cols-4`).
+- **Section gap:** 20px between the major sections.
+- **Element gap:** 4px.
 
-The page is a single synthesized story plus its sources. The screenshot is the source of truth for what is visible. Structure only here — fonts/sizes live in the **Typography Map**.
+## Page Structure (responsive)
+
+The page is a single synthesized story plus its sources. The screenshot is the source of truth for what is visible. Structure only here — fonts/sizes live in the **Typography Map**. Layout is responsive: a single column on mobile, opening into multi-column grids at the `lg` breakpoint (see **Layout**).
 
 Top → bottom:
 
-1. **Masthead** — centered brand wordmark "The News of the Day"; hairline rule below. (No hamburger/search — v1 has no navigation.)
-2. **Date block** — hairline rule, centered date `<h1>`, hairline rule.
-3. **Lead image** — inside a content card; bottom-right photo-credit overlay marked **TBD** (no credit field in the data contract yet — kept as a placeholder, not dropped). The lead image/headline are **not** links (the lead is synthesized from many sources).
+1. **Masthead** — centered brand wordmark "The News of the Day" in a fixed-height header; hairline rule along the bottom that runs **full-bleed** (edge-to-edge, `-mx-6`) on mobile and tucks back to the column on desktop. (No hamburger/search — there's no navigation.)
+2. **Date block** — **medium** hairline rule (Sterling Gray), centered date `<h1>`, medium hairline rule.
+3. **Lead image** — bare, **edge-to-edge** image (square, `w-full`), no card / border-radius / padding; bottom-right photo-credit overlay marked **TBD** (no credit field in the data contract yet — kept as a placeholder, not dropped). On desktop it sits in the left column of the lead grid, with the headline/dek/meta stack on the right. The lead image/headline are **not** links (the lead is synthesized from many sources).
 4. **Headline.**
 5. **Dek.**
 6. **Meta line** — reuses the reference's under-dek byline slot. Shows **"Generated at {generatedAt}"**. When `generatedAt` is older than **390 min** (6h cadence + slack), this line also shows the **stale notice** "last updated X minutes ago".
 7. **SOURCES** — section heading.
-8. **Source list** — hairline-separated items. Each is the source title linked to its `url`, followed by **"By {outlet}"** with the outlet linked (`target=_blank rel=noopener`).
+8. **Source list** — each item is the source title linked to its `url`, followed by **"By {outlet}"** with the outlet linked (`target=_blank rel=noopener`). On mobile the items are a single top-border-separated column; on desktop they become a **4-column grid** (Zinc Gray top border + column/row gaps).
 9. **Footer** — centered "© {year} The News of the Day".
 
 **Cold-start state:** when `/api/latest` returns no entry, render only a centered serif message "First refresh pending — check back shortly" — no image, no sources.
@@ -112,27 +117,29 @@ The page renders a `NewsEntry` (`{ date, news, sources }`). Gaps are rendered ar
 
 Serif = **Playfair Display** (Georgia fallback); Sans = **Helvetica Neue**. Colors: black `#000`, Sterling Gray `#6e6e6e`, hairlines Zinc Gray `#d9d9d9`. Stale notice uses **Editorial Yellow `#ffc500`**.
 
+Sizes given as `mobile → desktop` step at the `lg` breakpoint.
+
 | Element | Font | Size | Style |
 |---------|------|------|-------|
-| Masthead wordmark | Playfair Display | 24–28px | 700, tight tracking, black, centered |
-| Date header | Playfair Display | heading/display (32–40px) | 700, black, centered |
-| Headline | Playfair Display | 40px (`--text-display`) | 700, tracking −0.8px, lh 1.13, black |
-| Dek | Helvetica Neue | 18–20px | 400, lh ~1.3, black |
-| Meta line ("Generated at …") | Helvetica Neue | 13–14px (caption) | 400, Sterling Gray |
-| Stale notice | Helvetica Neue | 13–14px | 700, Editorial Yellow accent |
+| Masthead wordmark | Playfair Display | 22px | 700, tracking −0.02em, black, centered |
+| Date header | Playfair Display | heading (32px) | 700, black, centered |
+| Headline | Playfair Display | 32px → 40px (`--text-display`) | 700, tracking −0.8px, lh 1.13, black |
+| Dek | Helvetica Neue | 16px → 19px | 400, lh 1.35, black |
+| Meta line ("Generated at …") | Helvetica Neue | 14px → 13px (caption) | 400, Sterling Gray |
+| Stale notice | Helvetica Neue | 14px → 13px | 700, Editorial Yellow accent |
 | Image credit (TBD) | Helvetica Neue | 13px | 400, Sterling Gray, overlay bottom-right |
-| SOURCES label | Helvetica Neue | 13–14px | 700, uppercase, tracked, black |
-| Source title | Playfair Display | 24px (`--text-subheading`) | 700, tracking −0.48px, black; linked |
-| Source byline "By {outlet}" | Helvetica Neue | 13–14px | 400, Sterling Gray; outlet black, underline-on-hover |
+| SOURCES label | Helvetica Neue | 18px → 13px (caption) | 700, uppercase, tracked, black |
+| Source title | Playfair Display | 22px | 700, tracking −0.48px, black; linked |
+| Source byline "By {outlet}" | Helvetica Neue | 14px → 13px | 400, Sterling Gray; outlet black, underline-on-hover |
 | Footer | Helvetica Neue | 13px (caption) | 400, Sterling Gray, centered |
 | Cold-start message | Playfair Display | heading | 400, black, centered |
 
 ## Components
 
 ### Standard Content Card
-**Role:** Content container (used for the lead image)
+**Role:** Generic content container. **Currently unused** — the lead image is now rendered edge-to-edge (`w-full`, no card). The token is kept for reuse should a card surface return.
 
-Background Canvas White (`#ffffff`), 8px border-radius, no box shadow. Internal padding of 16px around content.
+Background Canvas White (`#ffffff`), 8px border-radius (`--radius-cards`), no box shadow. Internal padding of 16px around content.
 
 
 ## Do's and Don'ts
@@ -140,10 +147,10 @@ Background Canvas White (`#ffffff`), 8px border-radius, no box shadow. Internal 
 ### Do
 - Use Playfair Display (the serif) for the masthead, date, headline, source titles, and cold-start copy to carry the editorial voice.
 - Use Printer's Black (`#000000`) on Canvas White (`#ffffff`) for primary text.
-- Apply 8px border-radius to the content card.
-- Maintain tight letter-spacing on headlines (−0.8px at 40px display, −0.48px at 24px subheading).
-- Use Helvetica Neue for utility/short text (dek, meta, SOURCES label, bylines, footer) at 13–14px.
-- Use 16px internal padding on the content card; hairlines in Zinc Gray (`#d9d9d9`).
+- Render the lead image edge-to-edge (`w-full`, square) — no card, radius, or padding around it.
+- Maintain tight letter-spacing on headlines (−0.8px at the 40px display size, −0.48px on source titles).
+- Use Helvetica Neue for utility/short text (dek, meta, SOURCES label, bylines, footer).
+- Use hairlines for structure: Zinc Gray (`#d9d9d9`) for the masthead/source dividers, Sterling Gray (`#6e6e6e`) for the date-block rules.
 - Reserve Editorial Yellow (`#ffc500`) for the stale notice only.
 
 ### Don't
