@@ -41,7 +41,6 @@ sequenceDiagram
   participant KV as Upstash Redis
   participant V as Visitor
   participant P as Vercel page (server)
-  participant L as Vercel /api/latest
 
   Note over C,KV: Scheduled refresh every 6 hours
   C->>R: run scripts/refresh.ts
@@ -60,7 +59,6 @@ sequenceDiagram
   P->>KV: GET news:latest
   KV-->>P: news payload
   P-->>V: render HTML
-  Note over P,L: /api/latest is an auxiliary JSON endpoint<br/>(also reads KV, not used by the page)
 ```
 
 ### Tools
@@ -76,7 +74,6 @@ sequenceDiagram
 | Synthesize daily news | Nebius-hosted LLM |
 | Manual / backup refresh trigger | Route `/api/refresh` (Bearer-auth, same pipeline) |
 | Store latest news | Upstash Redis via Vercel Marketplace (key `news:latest`) |
-| Serve news as JSON (auxiliary) | Route `/api/latest` (reads KV; not used by the page) |
 | Render the page | Server component (`app/page.tsx`) reading KV directly via `lib/kv.ts` |
 | Host the live site | Vercel |
 | Version control & auto-deploy | GitHub → Vercel |
@@ -84,7 +81,7 @@ sequenceDiagram
 
 ### Data contract
 
-The value at the Redis key `news:latest` is a single JSON object written by `/api/refresh`. The page (`app/page.tsx`) reads it directly from KV server-side via `lib/kv.ts`; `/api/latest` returns the same object as-is for any programmatic consumer. Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
+The value at the Redis key `news:latest` is a single JSON object written by the refresh pipeline. The page (`app/page.tsx`) reads it directly from KV server-side via `lib/kv.ts`. Future per-day archive keys (e.g. `news:2026-05-20`) would use the same shape.
 
 ```ts
 type NewsEntry = {
@@ -164,7 +161,7 @@ Smoke-testing each external tool (Tavily, Nebius, Upstash Redis, GitHub Actions)
 - Replace the default `app/page.tsx` with a minimal placeholder: black text on white, "The News of the Day — coming soon" in Plantin (Georgia fallback).
 - Stub routes returning `501 { error: 'not implemented' }`:
   - `app/api/refresh/route.ts`
-  - `app/api/latest/route.ts`
+  - `app/api/latest/route.ts` *(removed post-launch — see note in Step 3)*
 - `README.md`: one paragraph + links to RFC, DESIGN, CLAUDE.
 - Link the Vercel project to the GitHub repo (Hobby plan, deploy-on-push to `main`).
 
@@ -212,6 +209,8 @@ Dashboard and password-manager work only — no commits, no branch.
 ---
 
 ### Step 3 — Shared types, Redis adapter, `/api/latest`
+
+> **Note (post-launch):** the `/api/latest` route described in this step was later **removed** as an unused endpoint — nothing called it (the page reads KV directly via `lib/kv.ts#getLatestNews()`, and the refresh pipeline writes KV directly). The shared `lib/kv.ts` helpers (`getLatestNews`, `setLatestNews`, `NEWS_LATEST_KEY`) from this step remain in use. The rest of this section is kept as the original build-log record.
 
 **Smoke test first (local, throwaway, not committed):** tiny `scripts/kv-ping.ts` using `@upstash/redis` to `set` then `get` against `news:test`. Confirm the round-trip. Delete before opening the PR.
 
