@@ -97,7 +97,7 @@ Top → bottom:
 8. **Source list** — each item is the source title linked to its `url`, followed by **"By {outlet}"** with the outlet linked (`target=_blank rel=noopener`). On mobile the items are a single top-border-separated column; on desktop they become a **4-column grid** (Zinc Gray top border + column/row gaps).
 9. **Footer** — centered "© {year} The News of the Day".
 
-**Cold-start state:** when `/api/latest` returns no entry, render only a centered serif message "First refresh pending — check back shortly" — no image, no sources.
+**Cold-start state:** when KV holds no entry (`getLatestNews()` returns null), render only a centered serif message "First refresh pending — check back shortly" — no image, no sources.
 
 ### Element → data mapping & gaps
 

@@ -34,13 +34,7 @@ Wait for `✓ Ready in …ms` and `Local: http://localhost:3000`. **Leave this t
 
 ## 2. (Optional) Eyeball the current KV state before refresh
 
-In the second terminal:
-
-```bash
-curl -s http://localhost:3000/api/latest | jq .
-```
-
-Shows whatever's currently stored. Note the `news.headline` so you can confirm it changes after the refresh.
+Open [http://localhost:3000](http://localhost:3000) in a browser — the page reads `news:latest` directly from KV and renders it. Note the headline so you can confirm it changes after the refresh.
 
 ---
 
@@ -69,21 +63,7 @@ curl -X POST -H "Authorization: Bearer $SECRET" http://localhost:3000/api/refres
 
 ## 4. Confirm the entry was written to KV
 
-```bash
-curl -s http://localhost:3000/api/latest | jq .
-```
-
-Response should be **identical** to step 3 and reflect the new headline.
-
-To be paranoid:
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $SECRET" http://localhost:3000/api/refresh | jq . > /tmp/refresh.json
-curl -s http://localhost:3000/api/latest | jq . > /tmp/latest.json
-diff /tmp/refresh.json /tmp/latest.json && echo IDENTICAL
-```
-
-Expected: `IDENTICAL`.
+Reload [http://localhost:3000](http://localhost:3000) — the page reads `news:latest` from KV server-side, so it should now render the **new** headline from step 3 (the refresh route returns exactly what it wrote to KV).
 
 ---
 
@@ -123,7 +103,7 @@ The cron lives in GitHub Actions, not Vercel. To verify it:
 
 1. **GitHub → Actions → Refresh news → Run workflow** (the `workflow_dispatch` button).
 2. The job should go **green**; open its log and confirm the staged `[refresh]` lines (crawl count, total ms, headline).
-3. `curl -s https://<deployment>/api/latest | jq .news.headline` reflects the new story; reload the live page to confirm.
+3. Reload the live page (`https://<deployment>/`) and confirm it reflects the new story's headline.
 4. **Failure signal:** with a deliberately broken secret the job goes **red** and `news:lastRun` records `status: "error"` — the page keeps serving the previous good entry.
 
 Secrets must be set under **Settings → Secrets and variables → Actions** (Secrets tab): `TAVILY_API_KEY`, `NEBIUS_API_KEY`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`. The optional `NEBIUS_MODEL` is a non-sensitive model ID, so it goes on the **Variables** tab of the same page (not Secrets).

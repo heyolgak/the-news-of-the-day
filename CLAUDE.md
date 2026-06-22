@@ -8,11 +8,10 @@ A one-page website that shows a single LLM-synthesized "news of the day" with th
 
 ## Architecture (at a glance)
 
-- **Next.js** (TypeScript + Tailwind, App Router) deployed on **Vercel** — but Vercel hosts only the **read side** (the page + `/api/latest`).
+- **Next.js** (TypeScript + Tailwind, App Router) deployed on **Vercel** — but Vercel hosts only the **read side** (the page).
 - **The refresh is offloaded to GitHub Actions.** A scheduled workflow (`.github/workflows/refresh.yml`, every 6h) runs `scripts/refresh.ts` → `lib/refresh.ts#runRefresh()` → **Tavily** (crawl 8 sources) → **Nebius** (LLM synthesis) → **headline resolution** (`lib/headlines.ts` — a plain HTTP `og:title` fetch of the chosen sources; see Source title resolution below) → **Upstash Redis** (key `news:latest`). This sidesteps the Vercel-Hobby walls (daily-only cron + 60s function ceiling) entirely — synthesis with the default reasoning model measured ~85s (a non-reasoning model like Kimi ~27s), so it never fit the 60s ceiling regardless of the cron tier.
 - **`/api/refresh`** runs the same `runRefresh()` pipeline but is now a **manual/backup** trigger only (Bearer-auth, `maxDuration = 60`); it's no longer the scheduled path.
-- The page (`app/page.tsx`) is a **server component** that reads KV directly via `lib/kv.ts` (`getLatestNews()`) — it does **not** call `/api/latest`.
-- **`/api/latest`** is an auxiliary public JSON endpoint that also reads KV; it's not consumed by the page.
+- The page (`app/page.tsx`) is a **server component** that reads KV directly via `lib/kv.ts` (`getLatestNews()`).
 - Browser never touches KV directly (all KV reads happen server-side).
 - **Dead-man's-switch:** every run records its outcome to `news:lastRun` (`{ at, status, error? }`); a failing scheduled run also exits non-zero → the GitHub Actions job goes red.
 
