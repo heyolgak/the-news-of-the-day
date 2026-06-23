@@ -345,9 +345,10 @@ granularity *and* functions at 60s — both of which would force concessions (da
 26h stale window, fighting the ceiling on every run). Since the pipeline is just
 "crawl → synthesize → write one KV key" and the libs are framework-agnostic, the refresh is
 **offloaded to a scheduled GitHub Actions workflow** instead. This sidesteps both walls: an
-arbitrary-interval cron and a multi-hour runtime. (Synthesis with the default reasoning model
-measured ~85s — over the old 60s ceiling — so it never fit on Vercel regardless of the cron
-tier.) The repo lives on GitHub already.
+arbitrary-interval cron and a multi-hour runtime. (The daily-only cron tier alone rules out the
+6h cadence regardless of synthesis time, so the offload stands no matter the model; the current
+default `Qwen/Qwen3.5-397B-A17B` measures ~10s on the real payload, comfortably within even the
+60s backup ceiling.) The repo lives on GitHub already.
 
 **Goal:** a GitHub Actions workflow runs the refresh every 6 hours; `/api/refresh` survives
 as a Bearer-authed manual/backup trigger running the same pipeline.
@@ -456,7 +457,7 @@ After parsing the LLM response, every `source.url` (and `news.imageUrl` if prese
 
 ### Model configurability via `NEBIUS_MODEL` env var *(Step 5b)*
 
-The Nebius model ID is read from an env var `NEBIUS_MODEL` with a code default of `Qwen/Qwen3.5-397B-A17B-fast`. This lets us swap models without redeploying code, and means there's no smoke-test step in the PR — pick a default, ship, change later if needed.
+The Nebius model ID is read from an env var `NEBIUS_MODEL` with a code default of `Qwen/Qwen3.5-397B-A17B`. This lets us swap models without redeploying code, and means there's no smoke-test step in the PR — pick a default, ship, change later if needed.
 
 **To change the model:**
 

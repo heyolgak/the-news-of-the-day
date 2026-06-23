@@ -3,7 +3,7 @@ import { fetchWithRetry } from './fetchWithRetry';
 import type { TavilyArticle } from './tavily';
 import type { NewsEntry, NewsSource } from './types';
 
-const DEFAULT_MODEL = 'Qwen/Qwen3.5-397B-A17B-fast';
+const DEFAULT_MODEL = 'Qwen/Qwen3.5-397B-A17B';
 // `||` not `??`: GitHub Actions injects an unset secret as an empty string,
 // and "" should fall back to the default (which `??` would not do).
 // Exported so the refresh pipeline can log which model actually ran.
