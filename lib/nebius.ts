@@ -67,6 +67,13 @@ export async function synthesizeNews(
         model: MODEL,
         temperature: 0.2,
         response_format: { type: 'json_object' },
+        // Qwen3.5-397B-A17B is a reasoning model: with thinking on it burns the
+        // completion-token budget on hidden reasoning, so on the large (~28k-token)
+        // article payload the JSON gets truncated mid-body or never written —
+        // surfacing as "missing message content" / "response is not valid JSON".
+        // We only need structured extraction, so disable thinking. (vLLM passes
+        // this through to the chat template; harmless for non-thinking models.)
+        chat_template_kwargs: { enable_thinking: false },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: JSON.stringify(userPayload) },
