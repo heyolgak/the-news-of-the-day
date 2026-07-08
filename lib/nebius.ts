@@ -33,6 +33,15 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
 }
 
+/**
+ * Thrown only for a semantically-invalid model response (bad JSON or wrong
+ * shape) — never for HTTP-level failures, which `fetchWithRetry` already
+ * retries per-attempt. Lets `synthesizeNews` retry just this class of error.
+ */
+class SynthesisValidationError extends Error {}
+
+const MAX_SYNTHESIS_ATTEMPTS = 2;
+
 export async function synthesizeNews(
   articles: TavilyArticle[],
   todayIso: string,
@@ -43,6 +52,37 @@ export async function synthesizeNews(
 
   const apiKey = requireEnv('NEBIUS_API_KEY');
 
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_SYNTHESIS_ATTEMPTS; attempt++) {
+    // The failure we retry is deterministic shape drift (the model returns valid
+    // JSON with `sources` in the wrong shape), so a blind re-roll at temp 0.2
+    // would likely reproduce it — the retry carries a corrective nudge instead.
+    const retryHint =
+      attempt > 1
+        ? 'IMPORTANT: `sources` must be a raw JSON array of URL strings — not a stringified array, not an object.'
+        : undefined;
+    try {
+      return await attemptSynthesis(articles, todayIso, apiKey, retryHint);
+    } catch (err) {
+      if (!(err instanceof SynthesisValidationError) || attempt === MAX_SYNTHESIS_ATTEMPTS) {
+        throw err;
+      }
+      console.warn(
+        `[nebius] attempt ${attempt} failed (${err.message}), retrying with corrective hint`,
+      );
+      lastErr = err;
+    }
+  }
+  // Unreachable: the loop either returns or throws.
+  throw lastErr;
+}
+
+async function attemptSynthesis(
+  articles: TavilyArticle[],
+  todayIso: string,
+  apiKey: string,
+  retryHint?: string,
+): Promise<NewsEntry> {
   const userPayload = {
     today: todayIso,
     articles: articles.map((a) => ({
@@ -66,7 +106,45 @@ export async function synthesizeNews(
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        response_format: { type: 'json_object' },
+        // Small structured output (headline + dek + ≤6 URLs). Not a fix for the
+        // shape-drift failure, but caps cost/latency and guards the sibling
+        // truncation failure family the enable_thinking note below describes.
+        max_tokens: 1000,
+        // Strict JSON schema (not bare json_object) so the model's output is
+        // structurally constrained to `sources` = array of 3-6 URL strings.
+        // `imageUrl` is nullable-required, not omitted, because strict mode
+        // requires every property to appear in `required`. Code-level validation
+        // below stays authoritative — we never trust the API's enforcement alone.
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'news_synthesis',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['news', 'sources'],
+              properties: {
+                news: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['headline', 'dek', 'imageUrl'],
+                  properties: {
+                    headline: { type: 'string' },
+                    dek: { type: 'string' },
+                    imageUrl: { type: ['string', 'null'] },
+                  },
+                },
+                sources: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  minItems: 3,
+                  maxItems: 6,
+                },
+              },
+            },
+          },
+        },
         // Qwen3.5-397B-A17B is a reasoning model: with thinking on it burns the
         // completion-token budget on hidden reasoning, so on the large (~28k-token)
         // article payload the JSON gets truncated mid-body or never written —
@@ -77,6 +155,7 @@ export async function synthesizeNews(
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: JSON.stringify(userPayload) },
+          ...(retryHint ? [{ role: 'user', content: retryHint }] : []),
         ],
       }),
     },
@@ -88,39 +167,67 @@ export async function synthesizeNews(
   }
 
   const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
   };
   const content = data.choices?.[0]?.message?.content;
+  const finishReason = data.choices?.[0]?.finish_reason;
+
+  // Log the raw output + finish_reason on any parse/shape failure, then throw a
+  // retryable SynthesisValidationError. The old message collapsed the real shape
+  // into "non-array"; the content preview shows exactly what the model returned.
+  // A `function` declaration (not an arrow const) so its `never` return is
+  // honored by control-flow narrowing at each call site, like a bare `throw`.
+  function fail(msg: string, sourcesType?: string): never {
+    console.error(
+      `[nebius] synthesis validation failed (finish_reason=${finishReason ?? 'unknown'}` +
+        (sourcesType ? `, sources type=${sourcesType}` : '') +
+        `): ${(content ?? '<empty>').slice(0, 500)}`,
+    );
+    throw new SynthesisValidationError(msg);
+  }
+
   if (!isNonEmptyString(content)) {
-    throw new Error('Nebius: missing message content');
+    fail('Nebius: missing message content');
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw new Error('Nebius: response is not valid JSON');
+    fail('Nebius: response is not valid JSON');
   }
 
   if (typeof parsed !== 'object' || parsed === null) {
-    throw new Error('Nebius: response is not an object');
+    fail('Nebius: response is not an object');
   }
   const root = parsed as Record<string, unknown>;
   const news = root.news as Record<string, unknown> | undefined;
-  const sources = root.sources;
+
+  // The observed failure: valid JSON but `sources` arrives as a JSON-stringified
+  // array rather than a native one. Coerce that shape before validating, so we
+  // recover even if the model (or json_schema mode) doesn't return a raw array.
+  let sources: unknown = root.sources;
+  if (typeof sources === 'string') {
+    try {
+      const reparsed = JSON.parse(sources);
+      if (Array.isArray(reparsed)) sources = reparsed;
+    } catch {
+      /* leave as-is; the array check below rejects it and the retry nudges. */
+    }
+  }
 
   if (!news || typeof news !== 'object') {
-    throw new Error('Nebius: missing news object');
+    fail('Nebius: missing news object');
   }
   if (!isNonEmptyString(news.headline)) {
-    throw new Error('Nebius: news.headline missing or empty');
+    fail('Nebius: news.headline missing or empty');
   }
   if (!isNonEmptyString(news.dek)) {
-    throw new Error('Nebius: news.dek missing or empty');
+    fail('Nebius: news.dek missing or empty');
   }
   if (!Array.isArray(sources) || sources.length < 3 || sources.length > 6) {
     const got = Array.isArray(sources) ? `length ${sources.length}` : 'non-array';
-    throw new Error(`Nebius: sources must be array of 3-6, got ${got}`);
+    fail(`Nebius: sources must be array of 3-6, got ${got}`, typeof sources);
   }
 
   // Map URL -> crawled article so source title/outlet are taken from our own
@@ -132,11 +239,11 @@ export async function synthesizeNews(
 
   const validatedSources: NewsSource[] = sources.map((s, i) => {
     if (!isNonEmptyString(s)) {
-      throw new Error(`Nebius: source[${i}] is not a URL string`);
+      return fail(`Nebius: source[${i}] is not a URL string`);
     }
     const article = crawledByUrl.get(s);
     if (!article) {
-      throw new Error(`Nebius: source[${i}] url hallucinated: ${s}`);
+      return fail(`Nebius: source[${i}] url hallucinated: ${s}`);
     }
     return { title: article.title, outlet: article.outlet, url: article.url };
   });
@@ -144,10 +251,10 @@ export async function synthesizeNews(
   let imageUrl: string | undefined;
   if (news.imageUrl !== undefined && news.imageUrl !== null) {
     if (!isNonEmptyString(news.imageUrl)) {
-      throw new Error('Nebius: news.imageUrl must be a non-empty string if provided');
+      fail('Nebius: news.imageUrl must be a non-empty string if provided');
     }
     if (!crawledImages.has(news.imageUrl)) {
-      throw new Error(`Nebius: news.imageUrl hallucinated: ${news.imageUrl}`);
+      fail(`Nebius: news.imageUrl hallucinated: ${news.imageUrl}`);
     }
     imageUrl = news.imageUrl;
   }

@@ -127,7 +127,7 @@ Tavily crawls the following outlets. The list is intentionally broad (geographic
 
 **User prompt** Each Tavily article is passed as `{ outlet, title, url, publishedAt, body }` in a JSON array. Today's date (ISO, e.g. "2026-05-21") is provided alongside as a string.
 
-**Failure modes.** If fewer than 3 articles are returned by Tavily, the refresh aborts and KV is not overwritten. If the LLM returns invalid JSON or fewer than 3 sources, the refresh aborts. The previous `news:latest` stays in place until the next successful run. The post-synthesis headline resolution (`lib/headlines.ts`) is the one **best-effort** step: a blocked/failed source fetch or a missing `og:title` falls back to the suffix-stripped Tavily title and never aborts the run.
+**Failure modes.** If fewer than 3 articles are returned by Tavily, the refresh aborts and KV is not overwritten. If the LLM returns invalid or mis-shaped JSON or fewer than 3 sources, `synthesizeNews()` retries once (see [Synthesis output hardening](#synthesis-output-hardening-json_schema--retry) below); if it still fails, the refresh aborts. The previous `news:latest` stays in place until the next successful run. The post-synthesis headline resolution (`lib/headlines.ts`) is the one **best-effort** step: a blocked/failed source fetch or a missing `og:title` falls back to the suffix-stripped Tavily title and never aborts the run.
 
 ### Source title resolution
 
@@ -266,8 +266,8 @@ Dashboard and password-manager work only — no commits, no branch.
 - `lib/nebius.ts`:
   - `synthesizeNews(articles, todayIso): Promise<NewsEntry>`.
   - System prompt per [LLM prompt sketch](#llm-prompt-sketch). Encodes wire-service tone, ≤12-word headline, ≤30-word dek, paraphrase-not-quote rule, 3–6 sources, JSON output matching `NewsEntry`.
-  - Request `response_format: { type: 'json_object' }`.
-  - Validate response shape. Throw on invalid JSON, missing required fields, or `sources.length < 3`.
+  - Request `response_format: { type: 'json_schema', … strict: true }` (a strict schema, not bare `json_object`) plus `max_tokens` — see [Synthesis output hardening](#synthesis-output-hardening-json_schema--retry).
+  - Validate response shape in code (the schema is a constraint, not a trusted guarantee). Throw on invalid JSON, missing required fields, or `sources.length` outside 3–6; a stringified `sources` array is normalized back to a real array first, and a parse/shape failure is retried once with a corrective hint before aborting.
 - `app/api/refresh/route.ts` — replace the 501 stub:
   - `POST` handler. Reject if `x-cron-secret` header ≠ `CRON_SECRET` → 401.
   - Pipeline with logged stages: start → crawl (log count) → synthesize (log model + duration) → Redis write → return `NewsEntry`. Total duration at end.
@@ -411,7 +411,11 @@ Tavily's `/search` is a single POST returning clean JSON. An SDK would have adde
 
 ### Nebius via direct `fetch` *(Step 5b)*
 
-Same reasoning as Tavily. Synthesis is a single chat-completions POST to `https://api.studio.nebius.com/v1/chat/completions` with `response_format: { type: 'json_object' }`. Nebius is OpenAI-API-compatible, so the `openai` SDK would work — but the one call we make doesn't justify the dependency. `lib/nebius.ts` uses the global `fetch` directly; there's no `openai` package in `package.json`.
+Same reasoning as Tavily. Synthesis is a single chat-completions POST to `https://api.studio.nebius.com/v1/chat/completions` with a strict `response_format: json_schema` (see [Synthesis output hardening](#synthesis-output-hardening-json_schema--retry)). Nebius is OpenAI-API-compatible, so the `openai` SDK would work — but the one call we make doesn't justify the dependency. `lib/nebius.ts` uses the global `fetch` directly; there's no `openai` package in `package.json`.
+
+### Synthesis output hardening (json_schema + retry)
+
+The synthesis model — notably `Qwen/Qwen3.5-397B-A17B` — has been observed returning **valid JSON in the wrong shape**, specifically `sources` as a JSON-*stringified* array rather than a native one (surfacing as `sources must be array of 3-6, got non-array`). This is *shape drift, not truncation*: the JSON parses cleanly. `synthesizeNews()` (`lib/nebius.ts`) hardens the path four ways: (1) a strict `response_format: { type: 'json_schema', … strict: true }` constrains the output to the `NewsEntry` shape (`imageUrl` is nullable-required, since strict mode needs every property in `required`); (2) a stringified `sources` array is normalized back to a real array before validation; (3) any parse/shape failure logs `finish_reason` + the `sources` type + a content preview for diagnosability; (4) the call retries once with a corrective hint before aborting (a blind re-roll at temperature 0.2 would just reproduce deterministic drift). `max_tokens` is also set — not a fix for shape drift, but hygiene against the sibling truncation case. Code-level validation stays authoritative — the schema is a constraint, never a trusted guarantee. See CLAUDE.md's "Model output drift" known limitation for the full rationale.
 
 ### Per-result images, not response-level *(Step 4)*
 
