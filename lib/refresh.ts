@@ -1,7 +1,7 @@
 import { crawlSources } from './tavily';
-import { synthesizeNews, MODEL } from './nebius';
+import { synthesizeNews, MODEL_CHAIN } from './nebius';
 import { resolveHeadlines } from './headlines';
-import { setLatestNews, setLastRun } from './kv';
+import { setLatestNews, setLastRun, type LastRun } from './kv';
 import type { NewsEntry } from './types';
 
 export type RefreshReason =
@@ -39,13 +39,23 @@ export async function runRefresh(): Promise<RefreshResult> {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  console.log(`[refresh] synthesizing with model ${MODEL}`);
+  console.log(`[refresh] synthesizing with model chain ${MODEL_CHAIN.join(' → ')}`);
   let entry: NewsEntry;
+  let model: string;
+  let fallbackReason: string | undefined;
   try {
-    entry = await synthesizeNews(articles, todayIso);
+    ({ entry, model, fallbackReason } = await synthesizeNews(articles, todayIso));
   } catch (err) {
     console.error('[refresh] synthesis failed', err);
     return fail('synthesis_failed', err);
+  }
+  if (fallbackReason) {
+    // A silent fallback would hide the next model removal until the whole chain
+    // is gone. `::warning::` is a GitHub Actions workflow command: it renders as
+    // a yellow annotation on the (still green) run.
+    console.log(
+      `::warning::Nebius primary ${MODEL_CHAIN[0]} failed (${oneLine(fallbackReason)}); used fallback ${model}`,
+    );
   }
 
   // Re-resolve each chosen source's headline from its own og:title (Tavily
@@ -60,18 +70,21 @@ export async function runRefresh(): Promise<RefreshResult> {
   }
 
   const durationMs = Date.now() - t0;
-  console.log(`[refresh] wrote KV in ${durationMs}ms total (model ${MODEL})`);
-  await recordLastRun('ok');
+  console.log(`[refresh] wrote KV in ${durationMs}ms total (model ${model})`);
+  await recordLastRun('ok', { model, fallbackReason });
   return { ok: true, entry, durationMs };
 }
 
 async function fail(reason: RefreshReason, error?: unknown): Promise<RefreshResult> {
-  await recordLastRun('error', `${reason}${error ? `: ${errMessage(error)}` : ''}`);
+  await recordLastRun('error', { error: `${reason}${error ? `: ${errMessage(error)}` : ''}` });
   return { ok: false, reason, error };
 }
 
 /** Best-effort: a lastRun write must never mask the real refresh outcome. */
-async function recordLastRun(status: 'ok' | 'error', detail?: string): Promise<void> {
+async function recordLastRun(
+  status: 'ok' | 'error',
+  detail: Omit<LastRun, 'at' | 'status'> = {},
+): Promise<void> {
   try {
     await setLastRun(status, detail);
   } catch (err) {
@@ -81,4 +94,9 @@ async function recordLastRun(status: 'ok' | 'error', detail?: string): Promise<v
 
 function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Workflow-command annotations are single-line; collapse newlines. */
+function oneLine(s: string): string {
+  return s.replace(/\s*\n\s*/g, ' ');
 }

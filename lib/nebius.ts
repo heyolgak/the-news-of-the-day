@@ -3,11 +3,22 @@ import { fetchWithRetry } from './fetchWithRetry';
 import type { TavilyArticle } from './tavily';
 import type { NewsEntry, NewsSource } from './types';
 
-const DEFAULT_MODEL = 'Qwen/Qwen3.5-397B-A17B';
-// `||` not `??`: GitHub Actions injects an unset secret as an empty string,
+// Ordered model chain: the primary first, then fallbacks from *other vendors*
+// so a single vendor's deprecation can't take the whole chain down. Nebius
+// removed the previous sole model (Qwen/Qwen3.5-397B-A17B) around 2026-11-10
+// with a hard 404 — the per-model retries can't recover from that, only
+// moving to a different model can.
+const PRIMARY_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507';
+// Benchmarked 2026-11-18 on a real 66-article crawl: all three pass first-try
+// in ~3s. (GLM-5.3-Flash returned empty content; MiniMax-M3.1-Flash invented an
+// imageUrl — both excluded.)
+const FALLBACK_MODELS = ['deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai/gpt-oss-120b'];
+// `||` not `??`: GitHub Actions injects an unset variable as an empty string,
 // and "" should fall back to the default (which `??` would not do).
-// Exported so the refresh pipeline can log which model actually ran.
-export const MODEL = process.env.NEBIUS_MODEL || DEFAULT_MODEL;
+// `NEBIUS_MODEL` overrides the primary only; the fallbacks still apply.
+export const MODEL_CHAIN: readonly string[] = [
+  ...new Set([process.env.NEBIUS_MODEL || PRIMARY_MODEL, ...FALLBACK_MODELS]),
+];
 const NEBIUS_ENDPOINT = 'https://api.studio.nebius.com/v1/chat/completions';
 
 const SYSTEM_PROMPT = `You are a wire-service editor. Given the articles below, identify the single most important story of the day and write one headline (≤12 words) and one dek (≤30 words, one sentence).
@@ -36,20 +47,87 @@ function isNonEmptyString(v: unknown): v is string {
 /**
  * Thrown only for a semantically-invalid model response (bad JSON or wrong
  * shape) — never for HTTP-level failures, which `fetchWithRetry` already
- * retries per-attempt. Lets `synthesizeNews` retry just this class of error.
+ * retries per-attempt. Lets `synthesizeWithModel` retry just this class of error.
  */
 class SynthesisValidationError extends Error {}
 
+/** A non-2xx Nebius response, typed so the model chain can tell cases apart. */
+class NebiusHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`Nebius HTTP ${status}: ${body}`);
+  }
+}
+
 const MAX_SYNTHESIS_ATTEMPTS = 2;
+
+export type SynthesisResult = {
+  entry: NewsEntry;
+  /** The model that actually produced `entry`. */
+  model: string;
+  /** Set when a fallback ran: why each earlier model in the chain was skipped. */
+  fallbackReason?: string;
+};
+
+/**
+ * Should a failure on one model move on to the next model in the chain?
+ * Yes for a model-specific problem — removed/unknown model (404, or 400 with
+ * `model_not_found`), model down (5xx/429 after fetchWithRetry's retry),
+ * timeout/network error, or persistent shape drift. No for auth (401/403) and
+ * other 4xx: those fail identically on every model, so fail fast.
+ */
+function isModelSpecificFailure(err: unknown): boolean {
+  if (err instanceof SynthesisValidationError) return true;
+  if (err instanceof NebiusHttpError) {
+    if (err.status === 404 || err.status === 429 || err.status >= 500) return true;
+    return err.body.includes('model_not_found');
+  }
+  // fetch rejects (network error, our timeout abort) surface as plain errors.
+  return err instanceof Error && (err.name === 'AbortError' || err.name === 'TypeError');
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export async function synthesizeNews(
   articles: TavilyArticle[],
   todayIso: string,
-): Promise<NewsEntry> {
+  models: readonly string[] = MODEL_CHAIN,
+): Promise<SynthesisResult> {
   if (articles.length === 0) {
     throw new Error('synthesizeNews: no articles');
   }
 
+  const skipped: string[] = [];
+  for (const [i, model] of models.entries()) {
+    try {
+      const entry = await synthesizeWithModel(model, articles, todayIso);
+      return {
+        entry,
+        model,
+        ...(skipped.length ? { fallbackReason: skipped.join('; ') } : {}),
+      };
+    } catch (err) {
+      if (!isModelSpecificFailure(err)) throw err;
+      const reason = `${model}: ${errMessage(err).slice(0, 300)}`;
+      skipped.push(reason);
+      if (i < models.length - 1) {
+        console.warn(`[nebius] model failed, trying next in chain — ${reason}`);
+      }
+    }
+  }
+  throw new Error(`all Nebius models failed — ${skipped.join(' | ')}`);
+}
+
+/** One model, with the existing corrective-hint retry for shape drift. */
+export async function synthesizeWithModel(
+  model: string,
+  articles: TavilyArticle[],
+  todayIso: string,
+): Promise<NewsEntry> {
   const apiKey = requireEnv('NEBIUS_API_KEY');
 
   let lastErr: unknown;
@@ -62,13 +140,13 @@ export async function synthesizeNews(
         ? 'IMPORTANT: `sources` must be a raw JSON array of URL strings — not a stringified array, not an object.'
         : undefined;
     try {
-      return await attemptSynthesis(articles, todayIso, apiKey, retryHint);
+      return await attemptSynthesis(model, articles, todayIso, apiKey, retryHint);
     } catch (err) {
       if (!(err instanceof SynthesisValidationError) || attempt === MAX_SYNTHESIS_ATTEMPTS) {
         throw err;
       }
       console.warn(
-        `[nebius] attempt ${attempt} failed (${err.message}), retrying with corrective hint`,
+        `[nebius] ${model} attempt ${attempt} failed (${err.message}), retrying with corrective hint`,
       );
       lastErr = err;
     }
@@ -78,6 +156,7 @@ export async function synthesizeNews(
 }
 
 async function attemptSynthesis(
+  model: string,
   articles: TavilyArticle[],
   todayIso: string,
   apiKey: string,
@@ -104,7 +183,7 @@ async function attemptSynthesis(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         temperature: 0.2,
         // Small structured output (headline + dek + ≤6 URLs). Not a fix for the
         // shape-drift failure, but caps cost/latency and guards the sibling
@@ -145,12 +224,13 @@ async function attemptSynthesis(
             },
           },
         },
-        // Qwen3.5-397B-A17B is a reasoning model: with thinking on it burns the
-        // completion-token budget on hidden reasoning, so on the large (~28k-token)
-        // article payload the JSON gets truncated mid-body or never written —
-        // surfacing as "missing message content" / "response is not valid JSON".
-        // We only need structured extraction, so disable thinking. (vLLM passes
-        // this through to the chat template; harmless for non-thinking models.)
+        // Reasoning models (e.g. the former default Qwen3.5-397B-A17B) burn the
+        // completion-token budget on hidden reasoning with thinking on, so on the
+        // large (~28k-token) article payload the JSON gets truncated mid-body or
+        // never written — surfacing as "missing message content" / "response is
+        // not valid JSON". We only need structured extraction, so disable
+        // thinking. (vLLM passes this through to the chat template; harmless for
+        // non-thinking models — every model in the chain was verified with it.)
         chat_template_kwargs: { enable_thinking: false },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -163,7 +243,7 @@ async function attemptSynthesis(
   );
 
   if (!res.ok) {
-    throw new Error(`Nebius HTTP ${res.status}: ${await res.text()}`);
+    throw new NebiusHttpError(res.status, await res.text());
   }
 
   const data = (await res.json()) as {
