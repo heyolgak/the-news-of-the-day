@@ -346,8 +346,8 @@ granularity *and* functions at 60s — both of which would force concessions (da
 "crawl → synthesize → write one KV key" and the libs are framework-agnostic, the refresh is
 **offloaded to a scheduled GitHub Actions workflow** instead. This sidesteps both walls: an
 arbitrary-interval cron and a multi-hour runtime. (The daily-only cron tier alone rules out the
-6h cadence regardless of synthesis time, so the offload stands no matter the model; the current
-default `Qwen/Qwen3.5-397B-A17B` measures ~10s on the real payload, comfortably within even the
+6h cadence regardless of synthesis time, so the offload stands no matter the model; every model
+in the current fallback chain measures ~2–3s on the real payload, comfortably within even the
 60s backup ceiling.) The repo lives on GitHub already.
 
 **Goal:** a GitHub Actions workflow runs the refresh every 6 hours; `/api/refresh` survives
@@ -415,7 +415,7 @@ Same reasoning as Tavily. Synthesis is a single chat-completions POST to `https:
 
 ### Synthesis output hardening (json_schema + retry)
 
-The synthesis model — notably `Qwen/Qwen3.5-397B-A17B` — has been observed returning **valid JSON in the wrong shape**, specifically `sources` as a JSON-*stringified* array rather than a native one (surfacing as `sources must be array of 3-6, got non-array`). This is *shape drift, not truncation*: the JSON parses cleanly. `synthesizeNews()` (`lib/nebius.ts`) hardens the path four ways: (1) a strict `response_format: { type: 'json_schema', … strict: true }` constrains the output to the `NewsEntry` shape (`imageUrl` is nullable-required, since strict mode needs every property in `required`); (2) a stringified `sources` array is normalized back to a real array before validation; (3) any parse/shape failure logs `finish_reason` + the `sources` type + a content preview for diagnosability; (4) the call retries once with a corrective hint before aborting (a blind re-roll at temperature 0.2 would just reproduce deterministic drift). `max_tokens` is also set — not a fix for shape drift, but hygiene against the sibling truncation case. Code-level validation stays authoritative — the schema is a constraint, never a trusted guarantee. See CLAUDE.md's "Model output drift" known limitation for the full rationale.
+The synthesis model — notably the former default `Qwen/Qwen3.5-397B-A17B` — has been observed returning **valid JSON in the wrong shape**, specifically `sources` as a JSON-*stringified* array rather than a native one (surfacing as `sources must be array of 3-6, got non-array`). This is *shape drift, not truncation*: the JSON parses cleanly. `synthesizeNews()` (`lib/nebius.ts`) hardens the path four ways: (1) a strict `response_format: { type: 'json_schema', … strict: true }` constrains the output to the `NewsEntry` shape (`imageUrl` is nullable-required, since strict mode needs every property in `required`); (2) a stringified `sources` array is normalized back to a real array before validation; (3) any parse/shape failure logs `finish_reason` + the `sources` type + a content preview for diagnosability; (4) the call retries once with a corrective hint before aborting (a blind re-roll at temperature 0.2 would just reproduce deterministic drift). `max_tokens` is also set — not a fix for shape drift, but hygiene against the sibling truncation case. Code-level validation stays authoritative — the schema is a constraint, never a trusted guarantee. See CLAUDE.md's "Model output drift" known limitation for the full rationale.
 
 ### Per-result images, not response-level *(Step 4)*
 
@@ -461,13 +461,15 @@ After parsing the LLM response, every `source.url` (and `news.imageUrl` if prese
 
 ### Model configurability via `NEBIUS_MODEL` env var *(Step 5b)*
 
-The Nebius model ID is read from an env var `NEBIUS_MODEL` with a code default of `Qwen/Qwen3.5-397B-A17B`. This lets us swap models without redeploying code, and means there's no smoke-test step in the PR — pick a default, ship, change later if needed.
+The **primary** Nebius model ID is read from an env var `NEBIUS_MODEL` with a code default of `Qwen/Qwen3-235B-A22B-Instruct-2507`. This lets us swap models without redeploying code.
+
+**Fallback chain (added 2026-11-18).** The original design had a single model, and the previous default `Qwen/Qwen3.5-397B-A17B` was removed by Nebius ~2026-11-10 (HTTP 404 `model_not_found`) — every run failed for ~9 days, since neither the fetch retry (5xx/429 only) nor the shape-drift retry (validation errors only) can recover from a missing model. `synthesizeNews()` now walks `MODEL_CHAIN` = `[NEBIUS_MODEL || primary, 'deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai/gpt-oss-120b']` — three vendors — moving on for model-specific failures (404/`model_not_found`, 5xx/429 after retry, timeout/network, persistent shape drift) and failing fast on 401/403/other 4xx. A fallback emits a GitHub Actions `::warning::` annotation and records `model` + `fallbackReason` in `news:lastRun`, so it's never silent.
 
 **To change the model:**
 
 - **Local development** — add `NEBIUS_MODEL=<model-id>` to `.env.local`, restart the dev server.
 - **Production / Preview on Vercel** — Project → Settings → Environment Variables → Add New. Key `NEBIUS_MODEL`, value `<model-id>`, tick Production + Preview. New deployments pick it up automatically; redeploy the current production deployment to apply it immediately.
-- **Code default** — change `DEFAULT_MODEL` in `lib/nebius.ts`. Applies wherever the env var isn't set.
+- **Code default** — change `PRIMARY_MODEL` (or `FALLBACK_MODELS`) in `lib/nebius.ts`. Applies wherever the env var isn't set.
 
 Available model IDs: <https://tokenfactory.nebius.com/models>.
 
